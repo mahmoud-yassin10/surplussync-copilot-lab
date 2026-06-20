@@ -1,4 +1,19 @@
 import type { CopilotExplanationDraft } from "./copilotResponseAssembler";
+import {
+  CANONICAL_INTERVAL_BASELINE,
+  CANONICAL_INTERVAL_CORRECTED,
+} from "./canonicalMlFeatures";
+import {
+  BASELINE_ATTENDANCE,
+  BASELINE_RECOMMENDED_PREP,
+  BASELINE_SHORTAGE_PROB,
+  CORRECTED_ATTENDANCE,
+  CORRECTED_RECOMMENDED_PREP,
+  CORRECTED_SHORTAGE_PROB,
+  CURRENT_PLAN,
+  PREVENTABLE_SURPLUS_BASELINE,
+  PREVENTABLE_SURPLUS_CORRECTED,
+} from "./demoConstants";
 import { BANNED_TOOLS } from "./toolRegistry";
 import { EvidenceItemSchema, ProvenanceItemSchema } from "./schemas";
 import type { z } from "zod";
@@ -8,6 +23,10 @@ type ProvenanceItem = z.infer<typeof ProvenanceItemSchema>;
 export interface MockToolPlanItem {
   name: string;
   args: Record<string, unknown>;
+}
+
+function formatPct(prob: number): string {
+  return `${(prob * 100).toFixed(1)}%`;
 }
 
 export function planMockTools(message: string): MockToolPlanItem[] {
@@ -66,6 +85,24 @@ export function planMockTools(message: string): MockToolPlanItem[] {
     return [{ name: "simulate_attendance_correction", args: { scenario: "trip_cancelled" } }];
   }
 
+  if (
+    (normalized.includes("prep") || normalized.includes("preparation") || normalized.includes("meals")) &&
+    (normalized.includes("adjust") ||
+      normalized.includes("change") ||
+      normalized.includes("set") ||
+      normalized.includes("override") ||
+      /\b\d{3}\b/.test(normalized))
+  ) {
+    const qtyMatch = normalized.match(/\b(4\d{2}|5\d{2}|6\d{2}|7\d{2})\b/);
+    const proposedQuantity = qtyMatch ? Number(qtyMatch[1]) : CORRECTED_RECOMMENDED_PREP;
+    return [
+      {
+        name: "propose_preparation_override",
+        args: { proposedQuantity, reason: message },
+      },
+    ];
+  }
+
   if (normalized.includes("why") || normalized.includes("explain") || normalized.includes("forecast")) {
     return [{ name: "get_attendance_forecast", args: {} }];
   }
@@ -86,38 +123,60 @@ export function buildMockExplanation(
   toolResults: Array<{ name: string; ok: boolean; output: Record<string, unknown> }>
 ): CopilotExplanationDraft {
   const normalized = message.toLowerCase();
-  const limitations: string[] = [];
+  const limitations: string[] = ["Synthetic demo data."];
   const provenance: ProvenanceItem[] = [];
   const evidence: EvidenceItem[] = [];
   const forecastTool = toolResults.find((t) => t.name === "get_attendance_forecast" && t.ok);
   if (forecastTool) {
-    const prov = forecastTool.output.provenance as { source?: string; fallbackUsed?: boolean } | undefined;
-    if (prov?.fallbackUsed) {
-      limitations.push("Forecast served from local canonical fallback.");
-      provenance.push({ source: "SurplusSync Canonical Fallback", status: "SYNTHETIC" });
-    } else {
-      provenance.push({ source: "SurplusSync ML Service", status: "PREDICTED" });
-    }
+    const attendance = Number(forecastTool.output.expectedAttendance ?? BASELINE_ATTENDANCE);
+    const intervalLow = Number(forecastTool.output.intervalLow ?? CANONICAL_INTERVAL_BASELINE.low);
+    const intervalHigh = Number(forecastTool.output.intervalHigh ?? CANONICAL_INTERVAL_BASELINE.high);
+    const recommendedPrep = Number(forecastTool.output.recommendedPrep ?? BASELINE_RECOMMENDED_PREP);
+    const preventableSurplus = Number(
+      forecastTool.output.preventableSurplus ?? PREVENTABLE_SURPLUS_BASELINE,
+    );
+    const shortageProb = Number(forecastTool.output.shortageProb ?? BASELINE_SHORTAGE_PROB);
+    const risk = String(forecastTool.output.risk ?? "high");
     evidence.push(
-      { label: "Expected Attendance", value: String(forecastTool.output.expectedAttendance), sourceType: "MODEL_OUTPUT" },
-      { label: "Recommended Prep", value: String(forecastTool.output.recommendedPrep), sourceType: "MODEL_OUTPUT" },
+      { label: "Expected attendance", value: String(attendance), sourceType: "MODEL_OUTPUT" },
       {
-        label: "Prediction Interval",
-        value: `${forecastTool.output.intervalLow}-${forecastTool.output.intervalHigh}`,
+        label: "Attendance interval",
+        value: `${intervalLow}–${intervalHigh}`,
         sourceType: "MODEL_OUTPUT",
-      }
+      },
+      { label: "Recommended preparation", value: String(recommendedPrep), sourceType: "MODEL_OUTPUT" },
+      { label: "Preventable surplus", value: String(preventableSurplus), sourceType: "MODEL_OUTPUT" },
+      { label: "Shortage probability", value: formatPct(shortageProb), sourceType: "MODEL_OUTPUT" },
+      { label: "Risk", value: risk, sourceType: "MODEL_OUTPUT" },
     );
   }
 
   const simTool = toolResults.find((t) => t.name === "simulate_attendance_correction" && t.ok);
   if (simTool) {
-    const prov = simTool.output.provenance as { fallbackUsed?: boolean } | undefined;
-    if (prov?.fallbackUsed) {
-      limitations.push("What-if simulation served from local canonical fallback.");
-    }
+    const attendance = Number(simTool.output.expectedAttendance ?? CORRECTED_ATTENDANCE);
+    const intervalLow = Number(simTool.output.intervalLow ?? CANONICAL_INTERVAL_CORRECTED.low);
+    const intervalHigh = Number(simTool.output.intervalHigh ?? CANONICAL_INTERVAL_CORRECTED.high);
+    const recommendedPrep = Number(simTool.output.recommendedPrep ?? CORRECTED_RECOMMENDED_PREP);
+    const preventableSurplus = Number(
+      simTool.output.preventableSurplus ?? PREVENTABLE_SURPLUS_CORRECTED,
+    );
+    const shortageProb = Number(simTool.output.shortageProb ?? CORRECTED_SHORTAGE_PROB);
+    const risk = String(simTool.output.risk ?? "high");
     evidence.push(
-      { label: "Simulated Attendance", value: String(simTool.output.expectedAttendance), sourceType: "MODEL_OUTPUT" },
-      { label: "Simulated Recommended Prep", value: String(simTool.output.recommendedPrep), sourceType: "MODEL_OUTPUT" }
+      { label: "Simulated attendance", value: String(attendance), sourceType: "MODEL_OUTPUT" },
+      {
+        label: "Simulated interval",
+        value: `${intervalLow}–${intervalHigh}`,
+        sourceType: "MODEL_OUTPUT",
+      },
+      {
+        label: "Simulated recommended preparation",
+        value: String(recommendedPrep),
+        sourceType: "MODEL_OUTPUT",
+      },
+      { label: "Preventable surplus", value: String(preventableSurplus), sourceType: "MODEL_OUTPUT" },
+      { label: "Shortage probability", value: formatPct(shortageProb), sourceType: "MODEL_OUTPUT" },
+      { label: "Risk", value: risk, sourceType: "MODEL_OUTPUT" },
     );
   }
 
@@ -152,14 +211,25 @@ export function buildMockExplanation(
   }
 
   if (simTool && !proposalCreated) {
+    const attendance = Number(simTool.output.expectedAttendance ?? CORRECTED_ATTENDANCE);
+    const intervalLow = Number(simTool.output.intervalLow ?? CANONICAL_INTERVAL_CORRECTED.low);
+    const intervalHigh = Number(simTool.output.intervalHigh ?? CANONICAL_INTERVAL_CORRECTED.high);
+    const recommendedPrep = Number(simTool.output.recommendedPrep ?? CORRECTED_RECOMMENDED_PREP);
+    const preventableSurplus = Number(
+      simTool.output.preventableSurplus ?? PREVENTABLE_SURPLUS_CORRECTED,
+    );
+    const shortageProb = Number(simTool.output.shortageProb ?? CORRECTED_SHORTAGE_PROB);
     return {
       answer:
-        "SIMULATION OUTCOME: No operational state was written. Cancelling the field trip raises expected attendance to 540 and recommended preparation to 575 meals. Human approval is required before applying this correction.",
+        `SIMULATION OUTCOME (what-if only — no operational state was written): If the cancelled field trip returns students, simulated attendance rises to ${attendance} (${intervalLow}–${intervalHigh}), recommended preparation becomes ${recommendedPrep}, preventable surplus is ${preventableSurplus}, shortage probability is ${formatPct(shortageProb)}, and risk remains high. Session attendance stays at ${BASELINE_ATTENDANCE} with recommended preparation ${BASELINE_RECOMMENDED_PREP} until a proposal is approved.`,
       answerType: "SIMULATION",
       evidence,
-      provenance: provenance.length ? provenance : [{ source: "SurplusSync ML What-If", status: "SYNTHETIC" }],
+      provenance,
       uncertainty: { level: "MODERATE", explanation: "Simulation does not mutate stored session values." },
-      limitations: [...limitations, "Stored session forecast remains unchanged until a proposal is approved."],
+      limitations: [
+        ...limitations,
+        "Stored session forecast remains unchanged until a proposal is approved.",
+      ],
     };
   }
 
@@ -176,9 +246,17 @@ export function buildMockExplanation(
   }
 
   if (forecastTool) {
+    const attendance = Number(forecastTool.output.expectedAttendance ?? BASELINE_ATTENDANCE);
+    const intervalLow = Number(forecastTool.output.intervalLow ?? CANONICAL_INTERVAL_BASELINE.low);
+    const intervalHigh = Number(forecastTool.output.intervalHigh ?? CANONICAL_INTERVAL_BASELINE.high);
+    const recommendedPrep = Number(forecastTool.output.recommendedPrep ?? BASELINE_RECOMMENDED_PREP);
+    const preventableSurplus = Number(
+      forecastTool.output.preventableSurplus ?? PREVENTABLE_SURPLUS_BASELINE,
+    );
+    const shortageProb = Number(forecastTool.output.shortageProb ?? BASELINE_SHORTAGE_PROB);
     return {
       answer:
-        "Thursday's attendance forecast shows 528 expected students with a recommended preparation of 562 meals. The 80% prediction interval spans 497 to 557 students.",
+        `Thursday is flagged high risk because expected attendance is ${attendance} (${intervalLow}–${intervalHigh}), recommended preparation is ${recommendedPrep} against a ${CURRENT_PLAN}-meal plan, preventable surplus is estimated at ${preventableSurplus} meals, and shortage probability is ${formatPct(shortageProb)}.`,
       answerType: "PREDICTION",
       evidence,
       provenance,

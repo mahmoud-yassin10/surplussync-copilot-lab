@@ -182,8 +182,12 @@ export async function executeTool(
         const output = {
           scenario: "trip_cancelled",
           expectedAttendance: result.forecast.expectedAttendance,
+          intervalLow: result.forecast.intervalLow,
+          intervalHigh: result.forecast.intervalHigh,
           recommendedPrep: result.forecast.recommendedPrep,
           preventableSurplus: result.forecast.preventableSurplus,
+          shortageProb: result.forecast.shortageProb,
+          risk: result.forecast.risk,
           provenance: result.provenance,
           sessionMutated: false,
         };
