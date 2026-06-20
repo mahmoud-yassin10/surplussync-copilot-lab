@@ -15,10 +15,15 @@ import {
   approveProposal,
   createPartnerSelectionProposal,
   createSession,
+  deleteIntegrationSession,
+  getKnownPartnerIds,
   getSessionState,
   rejectProposal,
   updateSessionRole,
 } from "../copilot/sessionStore";
+import { authorizeMainAppService } from "../copilot/integrationAuth";
+import { reconcileSessionFromMainApp } from "../copilot/reconcileSessionFromMainApp";
+import { validateReconciliationRequest } from "../copilot/reconciliationSchemas";
 import { UserRole } from "../types";
 import type { MlFetchFn } from "../copilot/forecastProvider";
 
@@ -30,6 +35,8 @@ export interface LabAppOptions {
   forecastProvider?: ForecastProvider;
   mlFetchFn?: MlFetchFn;
   testGeminiSteps?: Array<{ functionCalls?: FunctionCall[]; text?: string }>;
+  /** Server-only integration token override for tests. */
+  mainAppServiceToken?: string | null;
 }
 
 function resolveGeminiClient(options: LabAppOptions): GoogleGenAI | null {
@@ -77,6 +84,56 @@ export function createLabApp(options: LabAppOptions = {}): Express {
     new ForecastProvider({
       fetchFn: options.mlFetchFn,
     });
+  const integrationToken =
+    options.mainAppServiceToken !== undefined
+      ? options.mainAppServiceToken
+      : process.env.MAIN_APP_SERVICE_TOKEN ?? null;
+
+  function requireMainAppAuth(req: Request, res: Response): boolean {
+    const auth = authorizeMainAppService(req.get("authorization"), integrationToken);
+    if (auth.ok === false) {
+      res.status(auth.statusCode).json({ error: auth.error });
+      return false;
+    }
+    return true;
+  }
+
+  app.post("/api/integration/session/:sessionId/reconcile", (req: Request, res: Response) => {
+    if (!requireMainAppAuth(req, res)) return;
+
+    const validation = validateReconciliationRequest(
+      req.body,
+      getKnownPartnerIds(req.params.sessionId)
+    );
+    if (validation.ok === false) {
+      res.status(validation.statusCode).json({ error: validation.error });
+      return;
+    }
+
+    const result = reconcileSessionFromMainApp(req.params.sessionId, validation.data);
+    if (!result.ok) {
+      res.status(result.statusCode).json({ error: result.error });
+      return;
+    }
+
+    res.status(200).json({
+      state: result.state,
+      changed: result.changed,
+      idempotent: result.idempotent,
+    });
+  });
+
+  app.delete("/api/integration/session/:sessionId", (req: Request, res: Response) => {
+    if (!requireMainAppAuth(req, res)) return;
+
+    const deleted = deleteIntegrationSession(req.params.sessionId);
+    if (!deleted) {
+      res.status(404).json({ error: "Session not found" });
+      return;
+    }
+
+    res.status(204).send();
+  });
 
   app.post("/api/session", (req: Request, res: Response) => {
     const parsed = CreateSessionRequestSchema.safeParse(req.body ?? {});
