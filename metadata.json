@@ -1,0 +1,6 @@
+{
+  "name": "SurplusSync Copilot Lab",
+  "description": "An AI Operations Copilot laboratory for school-meal forecasting, food-waste prevention, and surplus recovery with transparent uncertainty and human approval gates.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
