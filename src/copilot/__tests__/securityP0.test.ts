@@ -8,8 +8,9 @@ import {
   getSession,
   addSanitizedProposals,
   getSessionState,
+  updateProposalsPermittedForTest,
 } from "../sessionStore";
-import { sanitizeProposals } from "../proposalValidator";
+import { COPILOT_PROPOSALS_DISABLED, sanitizeProposals } from "../proposalValidator";
 import { runCopilotTurn } from "../geminiRunner";
 import { ForecastProvider } from "../forecastProvider";
 import { buildCanonicalForecastFallback } from "../canonicalMlFeatures";
@@ -210,6 +211,39 @@ describe("duplicate approvals", () => {
     const attendanceAfterSecond = getSessionState(session.sessionId)!.forecast.expectedAttendance;
     expect(attendanceAfterSecond).toBe(attendanceAfterFirst);
     expect(attendanceAfterSecond).toBe(CORRECTED_ATTENDANCE);
+  });
+});
+
+describe("manual mode proposal lock", () => {
+  it("blocks pending proposal execution when proposal mode is disabled", () => {
+    const session = createSession(UserRole.SCHOOL_ADMINISTRATOR);
+    const snapshot = getSessionState(session.sessionId)!;
+    const { accepted } = sanitizeProposals(
+      [
+        {
+          actionType: "ATTENDANCE_UPDATE",
+          title: "Attendance correction",
+          summary: "Trip cancelled",
+          reason: "Weather",
+          after: { expectedAttendance: CORRECTED_ATTENDANCE },
+          before: { expectedAttendance: 528, recommendedPreparation: 562 },
+        },
+      ],
+      snapshot,
+      UserRole.SCHOOL_ADMINISTRATOR
+    );
+    addSanitizedProposals(session.sessionId, accepted);
+    updateProposalsPermittedForTest(session.sessionId, false);
+
+    const result = approveProposal(session.sessionId, accepted[0].proposalId);
+
+    expect(result.ok).toBe(false);
+    expect(result.statusCode).toBe(423);
+    expect(result.error).toBe(COPILOT_PROPOSALS_DISABLED);
+    const state = getSessionState(session.sessionId)!;
+    expect(state.forecast.expectedAttendance).toBe(528);
+    expect(state.proposals[0].status).toBe("PENDING_APPROVAL");
+    expect(state.auditLogs[0].executionResult).toBe("FAILED");
   });
 });
 

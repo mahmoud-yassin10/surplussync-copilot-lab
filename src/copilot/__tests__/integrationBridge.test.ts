@@ -19,7 +19,7 @@ import {
   getKnownPartnerIds,
   getSessionState,
 } from "../sessionStore";
-import { sanitizeProposals } from "../proposalValidator";
+import { COPILOT_PROPOSALS_DISABLED, sanitizeProposals } from "../proposalValidator";
 import { UserRole } from "../../types";
 
 const TEST_TOKEN = "test-main-app-integration-token";
@@ -115,6 +115,19 @@ describe("reconciliation schema", () => {
       });
       expect(validateReconciliationRequest(payload, partners).ok).toBe(true);
     }
+  });
+
+  it("accepts proposal mode from the main app snapshot", () => {
+    const result = validateReconciliationRequest(
+      baselinePayload({
+        operational: {
+          ...baselinePayload().operational,
+          proposalsPermitted: false,
+        },
+      }),
+      partners
+    );
+    expect(result.ok).toBe(true);
   });
 
   it("rejects impossible attendance and recommendation combinations", () => {
@@ -233,6 +246,44 @@ describe("reconcileSessionFromMainApp", () => {
     expect(getSessionState(session.sessionId)!.auditLogs[0].action).toBe(
       "MAIN_APP_STATE_RECONCILIATION"
     );
+  });
+
+  it("reconciles manual mode and blocks new proposals", () => {
+    const session = createSession(UserRole.SCHOOL_ADMINISTRATOR);
+    const result = reconcileSessionFromMainApp(
+      session.sessionId,
+      validated(
+        baselinePayload({
+          role: UserRole.SCHOOL_ADMINISTRATOR,
+          operational: {
+            ...baselinePayload().operational,
+            proposalsPermitted: false,
+          },
+        })
+      )
+    );
+    expect(result.ok).toBe(true);
+    expect(result.state?.proposalsPermitted).toBe(false);
+
+    const { accepted, rejected } = sanitizeProposals(
+      [
+        {
+          actionType: "ATTENDANCE_UPDATE",
+          title: "Attendance correction",
+          summary: "Trip cancelled",
+          reason: "Weather",
+          after: { expectedAttendance: CORRECTED_ATTENDANCE },
+          before: {
+            expectedAttendance: BASELINE_ATTENDANCE,
+            recommendedPreparation: BASELINE_RECOMMENDED_PREP,
+          },
+        },
+      ],
+      getSessionState(session.sessionId)!,
+      UserRole.SCHOOL_ADMINISTRATOR
+    );
+    expect(accepted).toHaveLength(0);
+    expect(rejected[0]?.reason).toBe(COPILOT_PROPOSALS_DISABLED);
   });
 
   it("leaves stale proposals failing execution validation after reconciliation", () => {

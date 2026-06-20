@@ -25,6 +25,7 @@ const OperationalSnapshotSchema = z
     attendanceCorrected: z.boolean(),
     provisionalAlertsSent: z.boolean(),
     selectedPartnerId: z.string().min(1).nullable(),
+    proposalsPermitted: z.boolean().optional(),
     partnerPrerequisites: z
       .object({
         surplusConfirmed: z.boolean(),
