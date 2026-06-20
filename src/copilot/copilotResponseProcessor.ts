@@ -44,6 +44,7 @@ export function processCopilotResponse(
     proposals: session.proposals,
     selectedPartnerId: session.selectedPartnerId,
     alertStatus: session.alertStatus,
+    proposalsPermitted: session.proposalsPermitted,
     partnerPrerequisites: session.partnerPrerequisites,
   };
 

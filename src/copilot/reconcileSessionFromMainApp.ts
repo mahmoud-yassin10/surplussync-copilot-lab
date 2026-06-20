@@ -34,6 +34,7 @@ interface ReconcilableView {
   currentPreparationPlan: number;
   alertStatus: AlertStatus;
   selectedPartnerId: string;
+  proposalsPermitted: boolean;
   partnerPrerequisites: PartnerPrerequisites;
 }
 
@@ -45,6 +46,7 @@ function snapshotReconcilable(session: NonNullable<ReturnType<typeof getSession>
     currentPreparationPlan: session.school.currentPreparationPlan,
     alertStatus: session.alertStatus,
     selectedPartnerId: session.selectedPartnerId,
+    proposalsPermitted: session.proposalsPermitted,
     partnerPrerequisites: { ...session.partnerPrerequisites },
   };
 }
@@ -108,6 +110,7 @@ function desiredReconcilable(
     alertStatus,
     selectedPartnerId:
       payload.operational.selectedPartnerId ?? session.selectedPartnerId,
+    proposalsPermitted: payload.operational.proposalsPermitted ?? session.proposalsPermitted,
     partnerPrerequisites: reconcilePartnerPrerequisites(session.partnerPrerequisites, payload),
   };
 }
@@ -120,6 +123,7 @@ function reconcilableEqual(a: ReconcilableView, b: ReconcilableView): boolean {
     a.currentPreparationPlan === b.currentPreparationPlan &&
     a.alertStatus === b.alertStatus &&
     a.selectedPartnerId === b.selectedPartnerId &&
+    a.proposalsPermitted === b.proposalsPermitted &&
     a.partnerPrerequisites.surplusConfirmed === b.partnerPrerequisites.surplusConfirmed &&
     a.partnerPrerequisites.surplusMeals === b.partnerPrerequisites.surplusMeals &&
     a.partnerPrerequisites.foodSafetyChecklistComplete ===
@@ -141,6 +145,7 @@ function applyReconcilable(
   session.school.currentPreparationPlan = desired.currentPreparationPlan;
   session.alertStatus = desired.alertStatus;
   session.selectedPartnerId = desired.selectedPartnerId;
+  session.proposalsPermitted = desired.proposalsPermitted;
   session.partnerPrerequisites = { ...desired.partnerPrerequisites };
 
   if (desired.expectedAttendance === CORRECTED_ATTENDANCE) {

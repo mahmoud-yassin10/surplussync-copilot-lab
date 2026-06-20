@@ -16,6 +16,7 @@ import { FOCUS_DATE } from "./demoConstants";
 import {
   attendanceExecutionPatch,
   buildPartnerSelectionDraft,
+  COPILOT_PROPOSALS_DISABLED,
   PARTNER_PREREQUISITES_INCOMPLETE,
   PARTNER_SELECTION_PROPOSAL_STALE,
   sanitizeProposals,
@@ -46,6 +47,7 @@ export interface SessionSnapshot {
   proposals: SanitizedProposal[];
   selectedPartnerId: string;
   alertStatus: AlertStatus;
+  proposalsPermitted: boolean;
   partnerPrerequisites: PartnerPrerequisites;
 }
 
@@ -76,6 +78,7 @@ function createInitialSnapshot(role: UserRole): Omit<LabSession, "sessionId" | "
     proposals: [],
     selectedPartnerId: "metro-food-bank",
     alertStatus: "NONE",
+    proposalsPermitted: true,
     partnerPrerequisites: structuredClone(DEFAULT_PARTNER_PREREQUISITES),
   };
 }
@@ -139,6 +142,16 @@ export function updatePartnerPrerequisitesForTest(
     ...session.partnerPrerequisites,
     ...patch,
   };
+  return toSnapshot(session);
+}
+
+export function updateProposalsPermittedForTest(
+  sessionId: string,
+  proposalsPermitted: boolean
+): SessionSnapshot | null {
+  const session = sessions.get(sessionId);
+  if (!session) return null;
+  session.proposalsPermitted = proposalsPermitted;
   return toSnapshot(session);
 }
 
@@ -398,7 +411,11 @@ function appendFailedExecutionAudit(
 }
 
 function shouldAuditFailedExecution(error?: string): boolean {
-  return error === PARTNER_PREREQUISITES_INCOMPLETE || error === PARTNER_SELECTION_PROPOSAL_STALE;
+  return (
+    error === COPILOT_PROPOSALS_DISABLED ||
+    error === PARTNER_PREREQUISITES_INCOMPLETE ||
+    error === PARTNER_SELECTION_PROPOSAL_STALE
+  );
 }
 
 function toSnapshot(session: LabSession): SessionSnapshot {
@@ -412,6 +429,7 @@ function toSnapshot(session: LabSession): SessionSnapshot {
     proposals: structuredClone(session.proposals),
     selectedPartnerId: session.selectedPartnerId,
     alertStatus: session.alertStatus,
+    proposalsPermitted: session.proposalsPermitted,
     partnerPrerequisites: structuredClone(session.partnerPrerequisites),
   };
 }

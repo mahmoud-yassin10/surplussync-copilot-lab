@@ -44,6 +44,7 @@ export interface PolicyCheck {
 
 export const PARTNER_PREREQUISITES_INCOMPLETE = "PARTNER_PREREQUISITES_INCOMPLETE";
 export const PARTNER_SELECTION_PROPOSAL_STALE = "PARTNER_SELECTION_PROPOSAL_STALE";
+export const COPILOT_PROPOSALS_DISABLED = "COPILOT_PROPOSALS_DISABLED";
 
 function evaluatePolicyChecks(
   actionType: ActionType,
@@ -229,6 +230,11 @@ export function sanitizeProposals(
 
     const actionType = draft.actionType;
 
+    if (!session.proposalsPermitted) {
+      rejected.push({ reason: COPILOT_PROPOSALS_DISABLED, actionType });
+      continue;
+    }
+
     if (!canProposeAction(requestingRole, actionType)) {
       rejected.push({
         reason: `Role ${requestingRole} cannot propose ${actionType}`,
@@ -338,6 +344,10 @@ export function validateProposalForExecution(
       statusCode: 403,
       error: `Role ${approvingRole} cannot approve ${proposal.actionType}`,
     };
+  }
+
+  if (!session.proposalsPermitted) {
+    return { ok: false, statusCode: 423, error: COPILOT_PROPOSALS_DISABLED };
   }
 
   const expectedBefore = getExpectedBeforeState(proposal.actionType, session);
