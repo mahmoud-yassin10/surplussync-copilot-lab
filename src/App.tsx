@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import { 
   UserRole, 
   SchoolDetails, 
@@ -375,207 +376,219 @@ export default function App() {
     triggerCopilotQuery(scenario.request);
   };
 
+  const formatValue = (obj: any) => {
+    if (!obj) return "None";
+    if (obj.expectedAttendance !== undefined) return `${obj.expectedAttendance} Students`;
+    if (obj.proposedQuantity !== undefined) return `${obj.proposedQuantity} Meals`;
+    if (obj.currentPreparationPlan !== undefined) return `${obj.currentPreparationPlan} Meals`;
+    if (obj.selectedPartnerId !== undefined) {
+      if (obj.selectedPartnerId === "harbor-shelter") return "Harbor Family Shelter";
+      if (obj.selectedPartnerId === "metro-food-bank") return "Metro Food Bank";
+      return obj.selectedPartnerId.replace(/-/g, " ").toUpperCase();
+    }
+    return JSON.stringify(obj);
+  };
+
+  const activePendingProposal = proposals.slice().reverse().find((p) => p.status === "PENDING_APPROVAL");
+
   return (
-    <div className="min-h-screen bg-[#0d1117] text-[#e6edf3] font-sans flex flex-col antialiased">
+    <div className="min-h-screen bg-[#070b19] text-[#e2e8f0] font-sans flex flex-col antialiased">
       {/* --- Top Global Header --- */}
-      <header className="border-b border-[#21262d] bg-[#161b22] px-6 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4 shrink-0 shadow-md">
+      <header className="border-b border-[#1b254a] bg-[#0b0f24] px-6 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4 shrink-0 shadow-xl">
         <div className="flex items-center gap-3">
-          <div className="bg-violet-900/40 border border-violet-500/50 p-2.5 rounded-lg flex items-center justify-center shadow-inner">
+          <div className="bg-violet-950/50 border border-violet-500/40 p-2.5 rounded-xl flex items-center justify-center shadow-inner">
             <Layers className="text-violet-400 w-6 h-6 animate-pulse" />
           </div>
           <div>
-            <h1 className="text-xl font-semibold tracking-tight text-white flex items-center gap-2">
-              SurplusSync Copilot Lab <span className="text-xs bg-emerald-950 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-800 font-normal">Active Laboratory</span>
+            <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
+              SurplusSync Copilot Lab 
+              <span className="text-xs bg-emerald-950/80 text-emerald-300 px-2.5 py-0.5 rounded-full border border-emerald-850 font-medium">
+                Active Research Sandbox
+              </span>
             </h1>
-            <p className="text-xs text-[#8b949e]">USAII Global AI Hackathon 2026 — High School Track — Environment Category</p>
+            <p className="text-xs text-[#94a3b8] font-semibold">USAII Global AI Hackathon 2026 — High School Track — Environment Platform</p>
           </div>
         </div>
 
         {/* --- Global Model State Telemetry --- */}
         <div className="flex flex-wrap items-center gap-3">
-          {/* Key status indicator */}
-          <div className="bg-black/40 border border-[#30363d] px-3 py-1.5 rounded-md flex items-center gap-2 text-xs">
-            <span className={`w-2.5 h-2.5 rounded-full ${apiConfig.hasGeminiApiKey ? "bg-emerald-500" : "bg-amber-500 animate-ping"}`} />
-            <span className="text-[#8b949e]">Key Access:</span>
-            <span className="font-mono text-white">
-              {apiConfig.hasGeminiApiKey ? "API KEY CONFIGURED" : "NO KEY - MOCK MODE ACTIVE"}
+          <div className="bg-black/35 border border-[#1e2a4f] px-3.5 py-2 rounded-lg flex items-center gap-2 text-xs shadow-inner">
+            <span className={`w-2 h-2 rounded-full ${apiConfig.hasGeminiApiKey ? "bg-emerald-400" : "bg-amber-400 animate-pulse"}`} />
+            <span className="text-[#94a3b8]">Live API Link:</span>
+            <span className="font-mono text-slate-100 font-semibold text-[11px]">
+              {apiConfig.hasGeminiApiKey ? "GEMINI SECURED" : "MOCK FALLBACK"}
             </span>
           </div>
 
-          <div className="flex items-center bg-[#21262d] rounded-md p-1 border border-[#30363d] text-xs">
+          <div className="flex items-center bg-[#11162d] rounded-lg p-1 border border-[#1b254a] text-xs shadow-sm">
             <button
               onClick={() => setForceMock(false)}
               disabled={!apiConfig.hasGeminiApiKey}
-              className={`px-3 py-1 rounded transition-all duration-200 ${
+              className={`px-3 py-1.5 rounded-md transition-all duration-200 cursor-pointer ${
                 !forceMock && apiConfig.hasGeminiApiKey
-                  ? "bg-violet-600 text-white font-medium"
-                  : "text-[#8b949e] hover:text-[#c9d1d9] disabled:opacity-50"
+                  ? "bg-violet-600 text-white font-bold shadow-md shadow-violet-900/30"
+                  : "text-[#94a3b8] hover:text-white disabled:opacity-50"
               }`}
             >
-              Gemini Mode
+              Gemini AI
             </button>
             <button
               onClick={() => setForceMock(true)}
-              className={`px-3 py-1 rounded transition-all duration-200 ${
+              className={`px-3 py-1.5 rounded-md transition-all duration-200 cursor-pointer ${
                 forceMock || !apiConfig.hasGeminiApiKey
-                  ? "bg-amber-600 text-white font-medium"
-                  : "text-[#8b949e] hover:text-[#c9d1d9]"
+                  ? "bg-amber-600 text-white font-bold shadow-md shadow-amber-900/30"
+                  : "text-[#94a3b8] hover:text-white"
               }`}
             >
-              Mock Fallback
+              Demo Sandbox
             </button>
           </div>
         </div>
       </header>
 
       {/* --- User Role Interactive Selector --- */}
-      <section className="bg-[#161b22] px-6 py-2 border-b border-[#21262d] flex flex-wrap items-center gap-3 text-xs">
-        <span className="text-amber-400 font-medium flex items-center gap-1">
-          <Shield className="w-3.5 h-3.5" /> SELECT YOUR SECURITY ROLE:
+      <section className="bg-[#0b0f1e] px-6 py-2.5 border-b border-[#1a2548] flex flex-wrap items-center gap-3 text-xs shadow-sm">
+        <span className="text-amber-400 font-semibold flex items-center gap-1">
+          <Shield className="w-3.5 h-3.5 text-amber-500" /> SIMULATE SYSTEM LOGIN ROLE:
         </span>
-        <div className="flex flex-wrap gap-2 py-1">
+        <div className="flex flex-wrap gap-2 py-0.5">
           {Object.values(UserRole).map((role) => (
             <button
               key={role}
               onClick={() => setActiveRole(role)}
-              className={`px-3 py-1.5 rounded-full border text-xs cursor-pointer font-medium transition-all ${
+              className={`px-3.5 py-1.5 rounded-md border text-xs cursor-pointer font-bold tracking-wide transition-all ${
                 activeRole === role
-                  ? "bg-amber-500/10 border-amber-500/60 text-amber-300"
-                  : "bg-transparent border-[#30363d] text-[#8b949e] hover:text-[#c9d1d9] hover:border-[#8b949e]"
+                  ? "bg-amber-500/10 border-amber-500/80 text-amber-300 shadow-md shadow-amber-950/25"
+                  : "bg-transparent border-[#1e2a4f] text-[#94a3b8] hover:text-[#cbd5e1] hover:border-slate-500"
               }`}
             >
-              {role.replace("_", " ")}
+              {role.replace(/_/g, " ")}
             </button>
           ))}
         </div>
       </section>
 
       {/* --- Three-Column Lab Environment --- */}
-      <main className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-5 p-5 bg-[#0d1117] select-none overflow-y-auto">
+      <main className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 p-6 bg-[#070b19] select-none overflow-y-auto">
         
         {/* =======================================================
             1) LEFT COLUMN: OPERATIONAL CONTEXT (lg:span-3)
             ======================================================= */}
-        <section id="operational-context" className="lg:col-span-3 flex flex-col gap-4">
+        <section id="operational-context" className="lg:col-span-3 flex flex-col gap-5">
           
           {/* Fictional Campus State */}
-          <div className="bg-[#161b22] border border-[#21262d] rounded-xl p-4 shadow-sm">
-            <div className="flex items-center justify-between border-b border-[#21262d] pb-2 mb-3">
-              <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+          <div className="bg-[#11162d] border border-[#202e5c] rounded-2xl p-5 shadow-lg">
+            <div className="flex items-center justify-between border-b border-[#1b254a] pb-3 mb-4">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
                 <Database className="w-4 h-4 text-blue-400" /> Demo Headquarters
               </h3>
-              <span className="text-[10px] bg-blue-950/40 text-blue-400 border border-blue-900 px-2 py-0.5 rounded font-mono">USA-East</span>
+              <span className="text-[10px] bg-blue-950/60 text-blue-300 border border-blue-900 px-2 py-0.5 rounded font-mono font-bold">USA-East-1</span>
             </div>
 
-            <div className="space-y-3 text-xs">
-              <div className="bg-[#0d1117] p-2.5 rounded-lg border border-[#21262d]">
-                <div className="text-[#8b949e] font-medium">U.S. Demonstration School</div>
-                <div className="font-semibold text-white text-sm mt-0.5">{school.name}</div>
-                <div className="text-[11px] text-blue-400/90 mt-1">{school.location}</div>
+            <div className="space-y-4">
+              <div className="bg-[#0d122b] p-3.5 rounded-xl border border-[#1b254a]">
+                <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Demonstration High School</div>
+                <div className="font-extrabold text-[#f8fafc] text-base mt-1 leading-tight">{school.name}</div>
+                <div className="text-xs text-blue-400/90 mt-1 font-medium">{school.location}</div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                <div className="bg-[#0d1117] p-2 rounded-lg border border-[#21262d]">
-                  <span className="text-[11px] text-[#8b949e]">Registered</span>
-                  <div className="text-sm font-semibold text-white">{school.registeredStudents} students</div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-[#0d122b] p-3 rounded-xl border border-[#1b254a]">
+                  <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider block mb-0.5">Registered</span>
+                  <div className="text-base font-extrabold text-white">{school.registeredStudents} students</div>
                 </div>
-                <div className="bg-[#0d1117] p-2 rounded-lg border border-[#21262d]">
-                  <span className="text-[11px] text-[#8b949e]">Meal Eligible</span>
-                  <div className="text-sm font-semibold text-white">{school.mealEligibleStudents} students</div>
+                <div className="bg-[#0d122b] p-3 rounded-xl border border-[#1b254a]">
+                  <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider block mb-0.5">Meal Eligible</span>
+                  <div className="text-base font-extrabold text-white">{school.mealEligibleStudents} students</div>
                 </div>
               </div>
 
-              <div className="bg-[#0d1117] p-2.5 rounded-md border border-[#21262d] flex items-center justify-between">
-                <span className="text-[#8b949e]">Cafeteria Manager:</span>
-                <span className="font-medium text-white">{school.cafeteriaManager}</span>
-              </div>
-              <div className="bg-[#0d1117] p-2.5 rounded-md border border-[#21262d] flex items-center justify-between">
-                <span className="text-[#8b949e]">Administrator:</span>
-                <span className="font-medium text-white">{school.schoolAdministrator}</span>
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center justify-between text-xs bg-[#0d122b] p-2.5 rounded-lg border border-[#1b254a]/60">
+                  <span className="text-[#94a3b8] font-medium">Head Chef:</span>
+                  <span className="font-bold text-slate-200">{school.cafeteriaManager}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs bg-[#0d122b] p-2.5 rounded-lg border border-[#1b254a]/60">
+                  <span className="text-[#94a3b8] font-medium">Administrator:</span>
+                  <span className="font-bold text-slate-200">{school.schoolAdministrator}</span>
+                </div>
               </div>
             </div>
           </div>
 
           {/* Operational Variables & Forecasts */}
-          <div className="bg-[#161b22] border border-[#21262d] rounded-xl p-4 shadow-sm flex-1">
-            <h3 className="text-sm font-semibold text-white flex items-center gap-2 border-b border-[#21262d] pb-2 mb-3">
-              <Activity className="w-4 h-4 text-emerald-400" /> Operational Parameters
-            </h3>
+          <div className="bg-[#11162d] border border-[#202e5c] rounded-2xl p-5 shadow-lg flex-1 flex flex-col justify-between">
+            <div>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2 border-b border-[#1b254a] pb-3 mb-4">
+                <Activity className="w-4 h-4 text-emerald-400" /> Operational Parameters
+              </h3>
 
-            <div className="space-y-4 text-xs">
-              {/* Date selection telemetry */}
-              <div className="flex items-center justify-between bg-[#161b30]/30 border border-violet-900/40 p-2.5 rounded-lg">
-                <span className="text-violet-300 font-medium">Selected Lab Target Date</span>
-                <span className="font-mono text-white text-sm font-semibold">2026-06-25 (Thursday)</span>
-              </div>
+              <div className="space-y-4">
+                {/* Date selection telemetry */}
+                <div className="flex items-center justify-between bg-[#0e132c] border border-violet-900/40 p-3 rounded-xl">
+                  <span className="text-violet-300 font-bold text-xs uppercase tracking-wide">Target Date</span>
+                  <span className="font-mono text-white text-xs font-extrabold bg-violet-950/80 px-2.5 py-0.5 rounded border border-violet-850">Thursday (Next)</span>
+                </div>
 
-              {/* Attendance parameter */}
-              <div className="bg-[#0d1117] p-3 rounded-lg border border-[#21262d]">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs text-[#8b949e] font-medium">Expected Attendance</span>
-                  <span className="text-[10px] bg-blue-950 text-blue-400 px-1.5 py-0.2 rounded font-mono border border-blue-800">PREDICTED MODEL INPUT</span>
-                </div>
-                <div className="text-xl font-bold text-white tracking-tight flex items-baseline gap-1.5">
-                  {forecast.expectedAttendance} <span className="text-xs text-[#8b949e] font-normal">students</span>
-                </div>
-                <div className="text-[11px] text-gray-400 mt-1 italic">
-                  80% Prediction interval: {forecast.predictionInterval.min} - {forecast.predictionInterval.max} students
-                </div>
-              </div>
-
-              {/* Meal target */}
-              <div className="bg-[#0d1117] p-3 rounded-lg border border-[#21262d]">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs text-[#8b949e] font-medium">Current Prep Plan Target</span>
-                  <span className="text-[10px] bg-emerald-950 text-emerald-400 px-1.5 py-0.2 rounded font-mono border border-emerald-900">ACTIVE STATE</span>
-                </div>
-                <div className="text-xl font-bold text-emerald-400 tracking-tight flex items-baseline gap-1.5">
-                  {school.currentPreparationPlan} <span className="text-xs text-emerald-500/80 font-normal">meals</span>
-                </div>
-                <div className="text-[11px] text-[#8b949e] mt-1">
-                  Normal Default Target: <span className="text-white">{school.regularDailyPreparation} meals</span> | Safety Floor: <span className="text-white">{school.safetyFloorCount}</span>
-                </div>
-                {school.currentPreparationPlan !== school.regularDailyPreparation && (
-                  <div className="mt-2 text-[10px] bg-emerald-950/60 border border-emerald-900/50 p-1.5 rounded text-emerald-300">
-                    * Human override approved in laboratory records
+                {/* Expected Attendance */}
+                <div className="bg-[#0d122b] p-4 rounded-xl border border-[#1b254a]">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Expected Attendance</span>
+                    <span className="text-[8px] bg-blue-950 text-blue-400 px-1.5 py-0.5 rounded font-mono font-extrabold border border-blue-900">PREDICTOR INPUT</span>
                   </div>
-                )}
-              </div>
+                  <div className="text-4xl font-extrabold text-[#f8fafc] tracking-tight flex items-baseline gap-1 font-sans">
+                    {forecast.expectedAttendance} <span className="text-xs text-[#94a3b8] font-semibold">students</span>
+                  </div>
+                  <div className="text-[11px] text-[#94a3b8] mt-1.5 font-medium">
+                    80% model margin: <span className="font-mono text-white">{forecast.predictionInterval.min} - {forecast.predictionInterval.max}</span>
+                  </div>
+                </div>
 
-              {/* Prevented surplus display */}
-              <div className="bg-[#0d1117] p-2.5 rounded-lg border border-[#21262d] flex justify-between items-center bg-teal-950/10 border-teal-900/30">
-                <span className="text-[#8b949e]">Prevented Surplus (Untouched)</span>
-                <span className="font-semibold text-teal-400 font-mono">
-                  {Math.max(0, school.regularDailyPreparation - school.currentPreparationPlan)} meals
+                {/* Meal target */}
+                <div className="bg-[#0d122b] p-4 rounded-xl border border-[#1b254a]">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Preparation Target</span>
+                    <span className="text-[8px] bg-emerald-950 text-emerald-400 px-1.5 py-0.5 rounded font-mono font-extrabold border border-emerald-900">ACTIVE STATE</span>
+                  </div>
+                  <div className="text-4xl font-extrabold text-emerald-400 tracking-tight flex items-baseline gap-1 font-sans">
+                    {school.currentPreparationPlan} <span className="text-xs text-emerald-500/80 font-bold">meals</span>
+                  </div>
+                  <div className="text-[11px] text-[#94a3b8] mt-2 leading-relaxed font-semibold">
+                    Baseline: <span className="text-slate-100 font-mono">{school.regularDailyPreparation}</span> • Safety Minimum: <span className="text-slate-100 font-mono">{school.safetyFloorCount}</span>
+                  </div>
+                  {school.currentPreparationPlan !== school.regularDailyPreparation && (
+                    <div className="mt-2 text-[10px] bg-teal-950/60 border border-teal-900/40 p-2 rounded text-teal-300 font-semibold">
+                      * Human regulatory change override active in memory
+                    </div>
+                  )}
+                </div>
+
+                {/* Prevented surplus display */}
+                <div className="bg-[#0d122b] p-3 rounded-xl border border-[#1b254a]/70 flex justify-between items-center bg-teal-950/15">
+                  <span className="text-[#94a3b8] font-bold text-xs uppercase tracking-wide">Prevented Food Waste</span>
+                  <span className="font-extrabold text-teal-300 font-mono text-base bg-teal-950/80 px-2.5 py-0.5 rounded border border-teal-900">
+                    {Math.max(0, school.regularDailyPreparation - school.currentPreparationPlan)} Meals
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-5 pt-3 border-t border-[#1b254a]/70 space-y-2">
+              <div className="flex items-center justify-between text-xs font-medium">
+                <span className="text-slate-400">Selected Route:</span>
+                <span className="font-bold text-slate-200 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-blue-400 inline-block animate-pulse" />
+                  {partners.find((p) => p.id === selectedPartnerId)?.name || "Not Selected"}
                 </span>
               </div>
-
-              {/* Selected Route tracker display */}
-              <div className="bg-[#0d1117] p-3 rounded-lg border border-[#21262d]">
-                <span className="text-[#8b949e] text-[11px]">Selected Destination Route</span>
-                <div className="mt-1 font-semibold text-white flex items-center gap-1.5">
-                  <div className="w-2.5 h-2.5 rounded-full bg-blue-500" />
-                  {partners.find((p) => p.id === selectedPartnerId)?.name || "Not Selected"}
-                </div>
-                <div className="mt-1 text-[11px] text-blue-400">
-                  Distance: {partners.find((p) => p.id === selectedPartnerId)?.distanceMiles} miles
-                </div>
-              </div>
-
-              {/* Provisional Alert status tracker */}
-              <div className="bg-[#0d1117] p-3 rounded-lg border border-[#21262d] flex items-center justify-between">
-                <div>
-                  <span className="text-[11px] text-[#8b949e]">Provisional alert trigger</span>
-                  <div className="font-semibold text-white mt-0.5">
-                    {alertStatus === "NONE" ? "DRAFT (NOT YET SENT)" : "BROADCAST ACTIVE"}
-                  </div>
-                </div>
-                <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-mono border ${
+              <div className="flex items-center justify-between text-xs font-medium">
+                <span className="text-slate-400">Emergency Broadcast:</span>
+                <span className={`font-mono text-[10px] font-bold px-2 py-0.5 rounded border ${
                   alertStatus === "NONE" 
-                    ? "bg-[#21262d] text-[#8b949e] border-[#30363d]" 
-                    : "bg-emerald-950/80 text-emerald-400 border-emerald-800"
+                    ? "bg-[#161a2b] text-[#94a3b8] border-[#293556]"
+                    : "bg-emerald-950 text-emerald-300 border-emerald-800"
                 }`}>
-                  {alertStatus === "NONE" ? "None" : "Sent"}
+                  {alertStatus === "NONE" ? "UNSENT DRAFT" : "ALERT SYSTEM SENT"}
                 </span>
               </div>
             </div>
@@ -585,94 +598,193 @@ export default function App() {
         {/* =======================================================
             2) CENTER COLUMN: COPILOT WORKSPACE (lg:span-5)
             ======================================================= */}
-        <section id="copilot-workspace" className="lg:col-span-5 flex flex-col gap-4">
+        <section id="copilot-workspace" className="lg:col-span-12 xl:col-span-5 flex flex-col gap-5">
           
+          {/* STICKY ACTIVE PROPOSAL CARD - THE ULTIMATE VISUAL FOCAL POINT */}
+          <AnimatePresence mode="wait">
+            {activePendingProposal && (
+              <motion.div
+                key={activePendingProposal.proposalId}
+                initial={{ opacity: 0, y: -20, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.96 }}
+                transition={{ type: "spring", stiffness: 350, damping: 25 }}
+                className="bg-[#1f1a16] border-2 border-amber-550/70 rounded-2xl p-5 shadow-[0_0_40px_-5px_rgba(245,158,11,0.25)] flex flex-col gap-4 relative overflow-hidden"
+              >
+                {/* Visual Gold glow behind */}
+                <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 blur-2xl rounded-full pointer-events-none" />
+
+                <div className="flex items-center justify-between border-b border-amber-500/20 pb-2">
+                  <span className="text-xs font-extrabold text-amber-400 flex items-center gap-1.5 tracking-wider uppercase">
+                    <AlertTriangle className="w-5 h-5 text-amber-500 animate-pulse" /> operational authorization gate
+                  </span>
+                  <span className="bg-amber-950/80 border border-amber-800/80 text-amber-300 text-[9px] font-mono px-2 py-0.5 rounded uppercase font-bold">
+                    human-in-the-loop validation
+                  </span>
+                </div>
+
+                <div>
+                  <h4 className="text-sm font-black text-white uppercase tracking-wide">{activePendingProposal.title}</h4>
+                  <p className="text-xs text-amber-100/80 mt-1 leading-relaxed">{activePendingProposal.summary}</p>
+                </div>
+
+                {/* Giant Typography Parameter Shift Indicator */}
+                <div className="grid grid-cols-1 md:grid-cols-11 items-center justify-center gap-3 py-3 px-4 bg-[#0d0c13]/90 rounded-xl border border-amber-955/35">
+                  <div className="md:col-span-5 text-center">
+                    <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Previous System State</div>
+                    <div className="text-sm font-bold font-mono text-slate-300 bg-slate-900/40 py-1.5 px-2 rounded border border-slate-800">
+                      {formatValue(activePendingProposal.before)}
+                    </div>
+                  </div>
+                  <div className="md:col-span-1 flex items-center justify-center">
+                    <ArrowRight className="w-5 h-5 text-amber-400 rotate-90 md:rotate-0" />
+                  </div>
+                  <div className="md:col-span-5 text-center">
+                    <div className="text-[10px] text-amber-450 font-bold uppercase tracking-wider mb-1">Proposed Override</div>
+                    <div className="text-xl font-black font-mono text-amber-350 bg-amber-950/15 py-1 px-2 rounded border border-amber-500/40 drop-shadow-[0_0_12px_rgba(245,158,11,0.25)]">
+                      {formatValue(activePendingProposal.after)}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Pre-Execution Policy Checks Lists */}
+                <div className="bg-[#0e0c12]/50 p-3 rounded-xl border border-amber-950/40 space-y-2">
+                  <div className="text-[9px] uppercase tracking-wider text-slate-400 font-bold">Automatic Security Safety Checks:</div>
+                  <div className="space-y-1">
+                    {activePendingProposal.policyChecks ? (
+                      activePendingProposal.policyChecks.map((chk, index) => {
+                        const safetyExceeded = chk.policy.includes("Safety Floor") && activePendingProposal.after.proposedQuantity < 540;
+                        return (
+                          <div key={index} className="flex items-start gap-2 text-xs">
+                            {chk.passed && !safetyExceeded ? (
+                              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                            ) : (
+                              <XCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                            )}
+                            <div className="text-[11px] text-slate-200">
+                              <span className="font-bold">{chk.policy}</span> • <span className="text-slate-400">{chk.explanation}</span>
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="text-slate-400 italic text-[11px]">No automatic checklists attached.</div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Clearance warning card */}
+                {(() => {
+                  const isUserAuthorized = activePendingProposal.requiredApprovals.includes(activeRole);
+                  return (
+                    <div className="space-y-3">
+                      {!isUserAuthorized ? (
+                        <div className="bg-amber-950/40 border border-amber-800/60 p-3 rounded-xl flex items-start gap-2 text-xs text-amber-300">
+                          <Shield className="w-4 h-4 text-amber-400 shrink-0 mt-0.5 animate-bounce" />
+                          <div>
+                            <span className="font-bold">Access Restrained:</span> Switch your login role in the top selector to{" "}
+                            <span className="underline font-black text-white">{activePendingProposal.requiredApprovals.join(" or ")}</span> to approve this execution.
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="bg-emerald-950/30 border border-emerald-800/40 p-2.5 rounded-xl flex items-center gap-2 text-xs text-emerald-400">
+                          <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                          <span>Your simulated role is <span className="font-bold underline">{activeRole}</span>. You have regulatory credentials to sign this proposal.</span>
+                        </div>
+                      )}
+
+                      {/* Controls Footer */}
+                      <div className="flex gap-2.5 pt-1">
+                        <button
+                          onClick={() => handleApproveProposal(activePendingProposal)}
+                          disabled={!isUserAuthorized}
+                          className={`flex-1 font-bold py-3 px-4 rounded-xl text-xs transition-all duration-200 flex items-center justify-center gap-2 shadow-lg ${
+                            isUserAuthorized
+                              ? "bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer hover:shadow-[0_0_15px_rgba(16,185,129,0.3)] hover:scale-[1.01]"
+                              : "bg-emerald-950/20 text-emerald-500/30 border border-emerald-950/45 cursor-not-allowed"
+                          }`}
+                        >
+                          <CheckCircle2 className="w-4 h-4" /> Sign & Execute Operations Change
+                        </button>
+                        <button
+                          onClick={() => handleRejectProposal(activePendingProposal)}
+                          className="bg-[#2B1B22]/80 hover:bg-rose-950 text-rose-300 hover:text-rose-100 py-3 px-4 rounded-xl text-xs border border-rose-950 cursor-pointer shadow-md transition-all duration-200"
+                        >
+                          Decline Request
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {/* Chat Panel Box */}
-          <div className="bg-[#161b22] border border-[#21262d] rounded-xl flex-1 flex flex-col overflow-hidden shadow-lg h-[460px]">
+          <div className="bg-[#10162d] border border-[#1e2a4f] rounded-2xl flex-1 flex flex-col overflow-hidden shadow-2xl h-[470px]">
             {/* Header */}
-            <div className="border-b border-[#21262d] bg-[#161b22] px-4 py-3 flex items-center justify-between text-xs font-semibold">
-              <span className="text-white flex items-center gap-2">
+            <div className="border-b border-[#1b254a] bg-[#0c1022] px-4 py-3.5 flex items-center justify-between text-xs font-semibold">
+              <span className="text-slate-100 flex items-center gap-2 font-bold uppercase tracking-wider">
                 <Sparkles className="text-violet-400 w-4 h-4" /> AI Operations Copilot
               </span>
-              <span className="text-violet-400 bg-violet-950 px-2.5 py-0.5 rounded-full border border-violet-800 tracking-wide">
+              <span className="text-violet-300 bg-violet-950 px-2.5 py-0.5 rounded-full border border-violet-850 tracking-wider font-mono text-[10px]">
                 MODEL: gemini-3.5-flash
               </span>
             </div>
 
             {/* Chat Messages Feed */}
-            <div className="flex-1 p-4 overflow-y-auto space-y-4 font-normal text-sm leading-relaxed scrollbar-thin scrollbar-thumb-gray-800">
-              {chatFeed.map((msg) => (
-                <div key={msg.id} className={`flex flex-col ${msg.sender === "USER" ? "items-end" : "items-start"}`}>
-                  <div className={`max-w-[85%] rounded-2xl px-4 py-3 border ${
-                    msg.sender === "USER"
-                      ? "bg-violet-950/50 border-violet-800/80 text-[#e6edf3]"
-                      : msg.isError
-                        ? "bg-red-950/40 border-red-900/60 text-red-300"
-                        : "bg-[#0d1117] border-[#21262d] text-[#e6edf3]"
-                  }`}>
-                    {/* Prefix label for compliance visibility */}
-                    <div className="text-[10px] text-[#8b949e] mb-1 font-mono uppercase tracking-wider flex items-center justify-between">
-                      <span>{msg.sender === "USER" ? `You (${activeRole.replace("_", " ")})` : "SurplusSync Copilot AI"}</span>
-                      <span>{msg.timestamp.slice(11, 19)}</span>
-                    </div>
-                    
-                    {/* Text Body parsed with bold highlights */}
-                    <div className="whitespace-pre-wrap select-text selection:bg-violet-700 font-sans">
-                      {msg.text.split("**").map((chunk, idx) => 
-                        idx % 2 === 1 ? <strong key={idx} className="text-white font-semibold">{chunk}</strong> : chunk
+            <div className="flex-1 p-4 overflow-y-auto space-y-4 font-normal text-sm leading-relaxed scrollbar-thin scrollbar-thumb-slate-800">
+              <div className="space-y-4">
+                {chatFeed.map((msg) => (
+                  <div key={msg.id} className={`flex flex-col ${msg.sender === "USER" ? "items-end" : "items-start"}`}>
+                    <div className={`max-w-[90%] rounded-2xl px-4 py-3 border ${
+                      msg.sender === "USER"
+                        ? "bg-[#2c1d53]/70 border-violet-800/60 text-[#cbd5e1]"
+                        : msg.isError
+                          ? "bg-red-950/30 border-red-900/50 text-red-350"
+                          : "bg-[#0d122b]/95 border-[#1e2a4f] text-[#f1f5f9]"
+                    }`}>
+                      {/* Prefix label for compliance visibility */}
+                      <div className="text-[9px] text-[#94a3b8] mb-1.5 font-mono uppercase tracking-widest flex items-center justify-between border-b border-slate-800 pb-1">
+                        <span className="font-bold">{msg.sender === "USER" ? `SIM OPERATOR (${activeRole.replace(/_/g, " ")})` : "SURPLUSSYNC CO-PILOT SUB-SYSTEM"}</span>
+                        <span>{msg.timestamp.slice(11, 16)} GMT</span>
+                      </div>
+                      
+                      {/* Text Body parsed with bold highlights */}
+                      <div className="whitespace-pre-wrap select-text selection:bg-violet-700 font-sans text-xs md:text-sm">
+                        {msg.text.split("**").map((chunk, idx) => 
+                          idx % 2 === 1 ? <strong key={idx} className="text-white font-extrabold">{chunk}</strong> : chunk
+                        )}
+                      </div>
+
+                      {/* Render embedded Action Proposal inside Chat Feed if available */}
+                      {msg.responseObj && msg.responseObj.proposedActions && msg.responseObj.proposedActions.length > 0 && (
+                        <div className="mt-4 pt-3 border-t border-[#1b254a]/60">
+                          {msg.responseObj.proposedActions.map((proposal) => {
+                            const isPending = proposal.status === "PENDING_APPROVAL";
+                            return (
+                              <div key={proposal.proposalId} className="bg-[#191e38] border border-amber-500/30 rounded-xl p-3 shadow-inner mt-2">
+                                <span className="text-[10px] font-extrabold text-[#f59e0b] bg-amber-950/80 px-2 py-0.5 rounded border border-amber-800 uppercase tracking-wider flex items-center gap-1.5 w-max mb-2">
+                                  <AlertTriangle className="w-3 h-3 text-amber-500 animate-pulse" /> {proposal.status}
+                                </span>
+                                <h4 className="text-xs font-bold text-white uppercase">{proposal.title}</h4>
+                                <p className="text-[11px] text-[#cbd5e1] mt-1 mb-2 leading-relaxed">{proposal.summary}</p>
+                                
+                                {isPending && (
+                                  <div className="mt-2 text-[10px] text-amber-300 italic">
+                                    Verify clearance authorization and sign using Gating Matrix above
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
                       )}
                     </div>
-
-                    {/* Render embedded Action Proposal inside Chat Feed if available */}
-                    {msg.responseObj && msg.responseObj.proposedActions && msg.responseObj.proposedActions.length > 0 && (
-                      <div className="mt-3 pt-3 border-t border-[#21262d]">
-                        {msg.responseObj.proposedActions.map((proposal) => (
-                          <div key={proposal.proposalId} className="bg-[#161b22] border border-amber-500/40 rounded-xl p-3 shadow-inner">
-                            <div className="flex items-center gap-2 mb-1.5">
-                              <span className="text-xs font-semibold text-amber-300 flex items-center gap-1">
-                                <AlertTriangle className="w-3.5 h-3.5 animate-pulse" /> PENDING PROPOSAL GENERATION
-                              </span>
-                            </div>
-                            <h4 className="text-xs font-bold text-white mb-1 uppercase">{proposal.title}</h4>
-                            <p className="text-[11px] text-gray-300 mb-2">{proposal.summary}</p>
-                            
-                            <div className="grid grid-cols-2 gap-2 text-[10px] mb-2 font-mono">
-                              <div className="bg-black/30 p-1 rounded">
-                                <span className="text-[#8b949e]">PREVIOUS:</span>
-                                <div className="text-white font-medium">{JSON.stringify(proposal.before)}</div>
-                              </div>
-                              <div className="bg-black/30 p-1 rounded">
-                                <span className="text-[#8b949e]">PROPOSED:</span>
-                                <div className="text-white font-semibold">{JSON.stringify(proposal.after)}</div>
-                              </div>
-                            </div>
-
-                            <div className="text-[10px] text-gray-400 italic mb-2">
-                              Required approval authority: <span className="text-white font-semibold">{proposal.requiredApprovals.join(", ")}</span>
-                            </div>
-
-                            {/* Human-in-the-loop actions */}
-                            <div className="flex gap-2">
-                              <button
-                                onClick={() => handleApproveProposal(proposal)}
-                                className="flex-1 bg-emerald-600/95 hover:bg-emerald-700 active:bg-emerald-800 text-white font-semibold text-xs py-1 px-2.5 rounded transition duration-150 cursor-pointer shadow-sm shadow-emerald-950/20"
-                              >
-                                Approve & Execute
-                              </button>
-                              <button
-                                onClick={() => handleRejectProposal(proposal)}
-                                className="bg-[#21262d] hover:bg-red-950 text-xs text-red-400 py-1 px-2.5 rounded border border-[#30363d] cursor-pointer"
-                              >
-                                Reject
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
               <div ref={chatBottomRef} />
             </div>
 
@@ -682,20 +794,20 @@ export default function App() {
                 e.preventDefault();
                 triggerCopilotQuery(inputText);
               }}
-              className="border-t border-[#21262d] bg-[#161b22] p-3 flex gap-2"
+              className="border-t border-[#1b254a]/80 bg-[#0c1022] p-3 flex gap-2"
             >
               <input
                 type="text"
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
-                placeholder="Ask SurplusSync Copilot..."
-                className="flex-1 bg-[#0d1117] border border-[#21262d] focus:border-violet-500/80 focus:ring-1 focus:ring-violet-500 rounded-lg px-3.5 py-2 text-sm text-[#e6edf3] placeholder-[#8b949e] outline-none"
+                placeholder="Ask co-pilot to check Wednesday data or run updates..."
+                className="flex-1 bg-[#090d1c] border border-[#1b254a] focus:border-violet-500 focus:ring-1 focus:ring-violet-500 rounded-lg px-3.5 py-2.5 text-xs text-[#cbd5e1] placeholder-slate-500 outline-none"
                 disabled={isLoading}
               />
               <button
                 type="submit"
                 disabled={isLoading}
-                className="bg-violet-600 hover:bg-violet-700 active:bg-violet-800 text-white p-2 rounded-lg cursor-pointer transition disabled:opacity-50"
+                className="bg-violet-600 hover:bg-violet-500 active:bg-violet-700 text-white p-2.5 rounded-lg cursor-pointer transition disabled:opacity-50"
               >
                 {isLoading ? (
                   <div className="w-5 h-5 border-2 border-t-transparent border-white rounded-full animate-spin" />
@@ -707,20 +819,20 @@ export default function App() {
           </div>
 
           {/* Built-in Scenario Launcher */}
-          <div className="bg-[#161b22] border border-[#21262d] rounded-xl p-4 shadow-sm">
-            <h3 className="text-xs font-bold text-amber-400 tracking-wider uppercase mb-2">
-              Laboratory Scenario Launcher
+          <div className="bg-[#11162d] border border-[#202e5c] rounded-2xl p-4 shadow-lg">
+            <h3 className="text-[10px] font-extrabold text-[#94a3b8] tracking-widest uppercase mb-2">
+              Laboratory Scenario Simulator Launcher
             </h3>
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 overflow-x-auto select-none">
               {SCENARIOS.map((scen) => (
                 <button
                   key={scen.id}
                   onClick={() => runScenarioDirectly(scen)}
-                  className="px-2 py-1.5 transition text-left cursor-pointer hover:bg-violet-950/20 rounded-md border border-[#21262d] hover:border-violet-800 text-[11px] group text-[#8b949e] hover:text-[#e6edf3] font-normal"
-                  title={`${scen.title}\n\nBehavior: ${scen.expectedBehavior}`}
+                  className="px-2 py-1.5 transition text-left cursor-pointer bg-[#0c112b] hover:bg-violet-950/20 rounded-lg border border-[#1e2a4f] hover:border-violet-800 text-[10px] group text-[#cbd5e1] hover:text-[#f8fafc] font-normal"
+                  title={`${scen.title}\n\nExpected Response: ${scen.expectedBehavior}`}
                 >
-                  <div className="font-semibold text-white group-hover:text-violet-300 text-[10px] truncate">{scen.title.split(":")[1].trim()}</div>
-                  <div className="text-[9px] text-[#8b949e] mt-0.5 line-clamp-1">{scen.category}</div>
+                  <div className="font-extrabold text-[#f1f5f9] group-hover:text-violet-300 text-[10px] truncate">{scen.title.replace("Scenario ", "S")}</div>
+                  <div className="text-[9px] text-[#94a3b8] mt-0.5 line-clamp-1">{scen.category}</div>
                 </button>
               ))}
             </div>
@@ -730,112 +842,112 @@ export default function App() {
         {/* =======================================================
             3) RIGHT COLUMN: INSPECTOR & GOVERNANCE (lg:span-4)
             ======================================================= */}
-        <section id="inspector-tabs" className="lg:col-span-4 flex flex-col gap-4">
+        <section id="inspector-tabs" className="lg:col-span-12 xl:col-span-4 flex flex-col gap-5">
           
-          <div className="bg-[#161b22] border border-[#21262d] rounded-xl p-4 flex-1 flex flex-col overflow-hidden shadow-lg h-[500px]">
+          <div className="bg-[#10162d] border border-[#1e2a4f] rounded-2xl p-5 flex-1 flex flex-col overflow-hidden shadow-2xl h-[530px]">
             {/* Tab Controls Navigation */}
-            <div className="flex border-b border-[#21262d] pb-2 overflow-x-auto gap-1 text-[11px] font-semibold shrink-0">
+            <div className="flex border-b border-[#1b254a] pb-3 overflow-x-auto gap-1 text-[11px] font-bold tracking-wide uppercase shrink-0">
               <button
                 onClick={() => setInspectorTab("transparency")}
-                className={`px-2.5 py-1.5 rounded-t-md transition ${inspectorTab === "transparency" ? "bg-[#21262d] text-white border border-[#21262d] border-b-transparent" : "text-[#8b949e] hover:text-white"}`}
+                className={`px-3 py-2 rounded-lg transition-all cursor-pointer ${inspectorTab === "transparency" ? "bg-violet-950/80 text-violet-300 border border-violet-800/40" : "text-slate-400 hover:text-white"}`}
               >
-                Transparency
+                Traceability
               </button>
               <button
                 onClick={() => setInspectorTab("proposals")}
-                className={`px-2.5 py-1.5 rounded-t-md transition relative ${inspectorTab === "proposals" ? "bg-[#21262d] text-white" : "text-[#8b949e] hover:text-white"}`}
+                className={`px-3 py-2 rounded-lg transition-all relative cursor-pointer ${inspectorTab === "proposals" ? "bg-amber-950/70 text-amber-300 border border-amber-800/40" : "text-slate-400 hover:text-white"}`}
               >
                 Proposals
                 {proposals.filter((p) => p.status === "PENDING_APPROVAL").length > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-amber-500 text-black font-extrabold w-3.5 h-3.5 rounded-full flex items-center justify-center text-[8px] border border-black animate-bounce" />
+                  <span className="absolute -top-1 -right-1 bg-amber-500 text-black font-extrabold w-4 h-4 rounded-full flex items-center justify-center text-[9px] border border-[#10162d] animate-bounce" />
                 )}
               </button>
               <button
                 onClick={() => setInspectorTab("permission")}
-                className={`px-2.5 py-1.5 rounded-t-md transition ${inspectorTab === "permission" ? "bg-[#21262d] text-white animate-pulse" : "text-[#8b949e] hover:text-white"}`}
+                className={`px-3 py-2 rounded-lg transition-all cursor-pointer ${inspectorTab === "permission" ? "bg-slate-900 border border-slate-800 text-slate-100" : "text-slate-400 hover:text-white"}`}
               >
-                Permissions
+                Guardrails
               </button>
               <button
                 onClick={() => setInspectorTab("tool")}
-                className={`px-2.5 py-1.5 rounded-t-md transition ${inspectorTab === "tool" ? "bg-[#21262d] text-white" : "text-[#8b949e] hover:text-white"}`}
+                className={`px-3 py-2 rounded-lg transition-all cursor-pointer ${inspectorTab === "tool" ? "bg-slate-900 border border-slate-800 text-slate-100" : "text-slate-400 hover:text-white"}`}
               >
                 Tools
               </button>
               <button
                 onClick={() => setInspectorTab("audit")}
-                className={`px-2.5 py-1.5 rounded-t-md transition ${inspectorTab === "audit" ? "bg-[#21262d] text-white" : "text-[#8b949e] hover:text-white"}`}
+                className={`px-3 py-2 rounded-lg transition-all cursor-pointer ${inspectorTab === "audit" ? "bg-slate-900 border border-slate-800 text-slate-100" : "text-slate-400 hover:text-white"}`}
               >
                 Audit Log
               </button>
               <button
                 onClick={() => setInspectorTab("docs")}
-                className={`px-2.5 py-1.5 rounded-t-md transition ${inspectorTab === "docs" ? "bg-[#21262d] text-white" : "text-[#8b949e] hover:text-white"}`}
+                className={`px-3 py-2 rounded-lg transition-all cursor-pointer ${inspectorTab === "docs" ? "bg-slate-900 border border-slate-800 text-slate-100" : "text-slate-400 hover:text-white"}`}
               >
                 Docs
               </button>
             </div>
 
             {/* Tab Panels */}
-            <div className="flex-1 overflow-y-auto mt-3 text-xs">
+            <div className="flex-1 overflow-y-auto mt-4 text-xs">
               
               {/* === TRANSPARENCY PANEL === */}
               {inspectorTab === "transparency" && (
-                <div className="space-y-3">
-                  <h4 className="font-bold text-white uppercase text-[11px] pb-1 border-b border-[#21262d]">Copilot Traceability Parameters</h4>
+                <div className="space-y-4">
+                  <h4 className="font-extrabold text-[#f1f5f9] uppercase text-[11px] tracking-wider pb-1.5 border-b border-[#1b254a]/60">Copilot Explainability Traceability Log</h4>
                   
                   {lastAIResponse ? (
-                    <div className="space-y-3">
-                      <div className="bg-[#0d1117] p-2.5 rounded border border-[#21262d]">
-                        <span className="text-[#8b949e] font-medium font-mono text-[9px] uppercase tracking-wider">Estimated Model Uncertainty</span>
+                    <div className="space-y-3.5">
+                      <div className="bg-[#0c112b] p-3.5 rounded-xl border border-[#1b254a]">
+                        <span className="text-slate-400 font-bold font-mono text-[9px] uppercase tracking-wider block mb-1">Estimated Uncertainty & Error Margin</span>
                         <div className="mt-1 flex items-center gap-1.5">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            lastAIResponse.uncertainty.level === "HIGH" ? "bg-red-950 text-red-300 border border-red-900" :
+                          <span className={`px-2.5 py-0.5 rounded text-[10px] font-black tracking-wide ${
+                            lastAIResponse.uncertainty.level === "HIGH" ? "bg-rose-950 text-rose-300 border border-rose-900" :
                             lastAIResponse.uncertainty.level === "MODERATE" ? "bg-amber-950 text-amber-300 border border-amber-900" :
                             "bg-emerald-950 text-emerald-300 border border-emerald-900"
                           }`}>
-                            {lastAIResponse.uncertainty.level} RISK UNCERTAINTY
+                            {lastAIResponse.uncertainty.level} RISK ESTIMATION
                           </span>
                         </div>
-                        <p className="mt-1.5 text-gray-300 leading-relaxed italic">"{lastAIResponse.uncertainty.explanation}"</p>
+                        <p className="mt-2 text-[#cbd5e1] leading-relaxed italic text-xs">"{lastAIResponse.uncertainty.explanation}"</p>
                       </div>
 
-                      <div className="bg-[#0d1117] p-2.5 rounded border border-[#21262d]">
-                        <span className="text-[#8b949e] font-mono text-[9px] uppercase">Data Provenance & Trust Labels</span>
-                        <div className="space-y-1.5 mt-2">
+                      <div className="bg-[#0c112b] p-3.5 rounded-xl border border-[#1b254a]">
+                        <span className="text-slate-400 font-bold font-mono text-[9px] uppercase block mb-2">Data Provenance Source Attribution</span>
+                        <div className="space-y-2">
                           {lastAIResponse.provenance.map((prov, i) => (
-                            <div key={i} className="flex justify-between items-center bg-[#161b22] px-2 py-1 rounded">
-                              <span className="text-[#c9d1d9] font-medium">{prov.source}</span>
-                              <span className="text-[9px] uppercase font-mono text-blue-400 font-semibold">{prov.status}</span>
+                            <div key={i} className="flex justify-between items-center bg-[#10162d] px-3 py-1.5 rounded-lg border border-[#1b254a]/50">
+                              <span className="text-[#f1f5f9] font-bold text-[11px]">{prov.source}</span>
+                              <span className="text-[9px] uppercase font-mono text-blue-400 font-extrabold bg-blue-950/80 px-2 py-0.5 rounded border border-blue-900">{prov.status}</span>
                             </div>
                           ))}
                         </div>
                       </div>
 
-                      <div className="bg-[#0d1117] p-2.5 rounded border border-[#21262d]">
-                        <span className="text-[#8b949e] font-mono text-[9px] uppercase">Operational Limitations Warning</span>
-                        <ul className="list-disc list-inside mt-1.5 space-y-1 text-gray-400 pl-1 leading-normal">
+                      <div className="bg-[#0c112b] p-3.5 rounded-xl border border-[#1b254a]">
+                        <span className="text-slate-400 font-bold font-mono text-[9px] uppercase block mb-1">Model Reasoning Constraints</span>
+                        <ul className="list-disc list-inside mt-2 space-y-1.5 text-[#cbd5e1] pl-1 leading-relaxed text-xs">
                           {lastAIResponse.limitations.map((lim, i) => (
                             <li key={i}>{lim}</li>
                           ))}
                         </ul>
                       </div>
 
-                      <div className="bg-[#0d1117] p-2.5 rounded border border-[#21262d]">
-                        <span className="text-[#8b949e] font-mono text-[9px] uppercase">Model Evidence Retrieved</span>
-                        <div className="space-y-1 mt-1.5">
+                      <div className="bg-[#0c112b] p-3.5 rounded-xl border border-[#1b254a]">
+                        <span className="text-slate-400 font-bold font-mono text-[9px] uppercase block mb-2">Confidence Logic Evidence Evidence</span>
+                        <div className="space-y-1.5">
                           {lastAIResponse.evidence.map((ev, i) => (
-                            <div key={i} className="text-[11px] flex justify-between dev-data-row border-b border-gray-900 py-1">
-                              <span className="text-gray-300 font-sans">{ev.label}:</span>
-                              <span className="font-semibold text-white font-mono">{ev.value}</span>
+                            <div key={i} className="text-[11px] flex justify-between border-b border-[#1b254a]/40 py-1.5">
+                              <span className="text-slate-300 font-medium">{ev.label}:</span>
+                              <span className="font-extrabold text-white font-mono">{ev.value}</span>
                             </div>
                           ))}
                         </div>
                       </div>
                     </div>
                   ) : (
-                    <div className="text-center py-10 text-[#8b949e] italic">
-                      No query submitted this turn. Trigger a scenario launcher or type a question to inspect model confidence vectors here.
+                    <div className="text-center py-10 text-slate-500 italic text-xs leading-relaxed">
+                      No queries run. Use the Simulator Launcher or ask the model a question to populate evidence streams.
                     </div>
                   )}
                 </div>
@@ -843,48 +955,48 @@ export default function App() {
 
               {/* === ACTION PROPOSALS GRID === */}
               {inspectorTab === "proposals" && (
-                <div className="space-y-3">
-                  <h4 className="font-bold text-white uppercase text-[11px] pb-1 border-b border-[#21262d]">Human Approval Workspace</h4>
+                <div className="space-y-4">
+                  <h4 className="font-extrabold text-[#f1f5f9] uppercase text-[11px] tracking-wider pb-1.5 border-b border-[#1b254a]/60">Proposals Sandbox Audit</h4>
                   
                   {proposals.length > 0 ? (
-                    <div className="space-y-3">
+                    <div className="space-y-3.5">
                       {proposals.slice().reverse().map((prop, index) => (
-                        <div key={prop.proposalId || index} className={`p-3 rounded-lg border ${
+                        <div key={prop.proposalId || index} className={`p-4 rounded-xl border ${
                           prop.status === "PENDING_APPROVAL" 
                             ? "bg-amber-950/10 border-amber-500/40" 
                             : prop.status === "EXECUTED" 
                               ? "bg-emerald-950/20 border-emerald-900/40" 
-                              : "bg-[#21262d]/50 border-[#30363d]"
+                              : "bg-slate-900/50 border-slate-800"
                         }`}>
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-[10px] font-mono font-bold text-blue-400">{prop.actionType}</span>
-                            <span className={`px-2 py-0.5 rounded text-[8px] font-mono uppercase font-bold tracking-wide ${
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-[9px] font-mono font-bold uppercase text-blue-400 tracking-wider font-semibold">{prop.actionType}</span>
+                            <span className={`px-2 py-0.5 rounded text-[8px] font-mono uppercase font-black tracking-widest ${
                               prop.status === "PENDING_APPROVAL" ? "bg-amber-500/20 text-amber-300" :
-                              prop.status === "EXECUTED" ? "bg-emerald-500/20 text-emerald-300" : "bg-gray-800 text-gray-400"
+                              prop.status === "EXECUTED" ? "bg-emerald-500/25 text-emerald-300" : "bg-zinc-800 text-zinc-400"
                             }`}>
                               {prop.status}
                             </span>
                           </div>
-                          <div className="font-bold text-white mb-1">{prop.title}</div>
-                          <p className="text-gray-300 text-[11px] mb-2 leading-relaxed">{prop.summary}</p>
+                          <div className="font-bold text-white mb-1 uppercase tracking-wide text-xs">{prop.title}</div>
+                          <p className="text-[#cbd5e1] text-[11px] mt-1 leading-relaxed">{prop.summary}</p>
                           
                           {prop.status === "PENDING_APPROVAL" && (
-                            <div className="mt-2.5 p-2 bg-black/40 rounded border border-[#30363d] space-y-1">
-                              <div className="text-[10px] text-gray-400">
-                                Required Role Approval: <span className="text-amber-300 font-bold">{prop.requiredApprovals.join(", ")}</span>
+                            <div className="mt-3 p-3 bg-black/40 rounded-lg border border-[#1b254a]/40 space-y-1.5">
+                              <div className="text-[10px] text-slate-400 font-semibold">
+                                Required Safe Credentials: <span className="text-amber-300 font-extrabold">{prop.requiredApprovals.join(", ")}</span>
                               </div>
-                              <div className="flex gap-2 pt-1.5">
+                              <div className="flex gap-2 pt-1">
                                 <button
                                   onClick={() => handleApproveProposal(prop)}
-                                  className="bg-emerald-600 font-semibold px-2 py-1 rounded text-white flex-1 hover:bg-emerald-700 cursor-pointer text-[11px]"
+                                  className="bg-emerald-600 font-extrabold px-3 py-1.5 rounded-lg text-white flex-1 hover:bg-emerald-500 cursor-pointer text-xs"
                                 >
-                                  Approve & Execute
+                                  Sign & Execute
                                 </button>
                                 <button
                                   onClick={() => handleRejectProposal(prop)}
-                                  className="bg-[#21262d] px-2 py-1 rounded text-red-400 hover:bg-red-950 text-[11px] border border-[#30363d] cursor-pointer"
+                                  className="bg-[#21262d] px-3 py-1.5 rounded-lg text-rose-400 hover:bg-rose-950 text-xs border border-[#30363d] cursor-pointer"
                                 >
-                                  Reject
+                                  Decline
                                 </button>
                               </div>
                             </div>
@@ -893,8 +1005,8 @@ export default function App() {
                       ))}
                     </div>
                   ) : (
-                    <div className="text-center py-10 text-[#8b949e] italic">
-                      Zero operational action proposals generated. Trigger Scenario 3, Scenario 6, or Scenario 8 to spawn actionable workflows.
+                    <div className="text-center py-10 text-slate-500 italic text-xs">
+                      No operational proposals issued. Ask Copilot to make an change.
                     </div>
                   )}
                 </div>
@@ -902,110 +1014,101 @@ export default function App() {
 
               {/* === PERMISSION WORKSPACE === */}
               {inspectorTab === "permission" && (
-                <div className="space-y-3">
-                  <h4 className="font-bold text-white uppercase text-[11px] pb-1 border-b border-[#21262d]">Security Guard Sandbox</h4>
+                <div className="space-y-4">
+                  <h4 className="font-extrabold text-[#f1f5f9] uppercase text-[11px] tracking-wider pb-1.5 border-b border-[#1b254a]/60">Safety Guardrails Sandbox</h4>
                   
-                  <div className="bg-[#0d1117] p-3 rounded border border-[#21262d] space-y-3.5">
-                    <div className="flex justify-between items-center bg-[#161b22] p-2 rounded">
-                      <span>Active Monitored Session Role:</span>
-                      <span className="font-mono text-amber-300 font-bold bg-amber-950 px-2 py-0.5 rounded border border-amber-900">{activeRole}</span>
+                  <div className="bg-[#0c112b] p-4 rounded-xl border border-[#1b254a] space-y-4">
+                    <div className="flex justify-between items-center bg-[#10162d] p-3 rounded-lg border border-[#1b254a]/60">
+                      <span className="font-semibold text-slate-300 text-xs">Simulated Security Environment:</span>
+                      <span className="font-mono text-amber-300 font-extrabold bg-amber-950 px-2.5 py-1 rounded border border-amber-900 text-xs">{activeRole}</span>
                     </div>
 
-                    <div className="border-t border-[#21262d] pt-3">
-                      <h5 className="font-semibold text-white mb-1.5 uppercase text-[10px] text-gray-400">Policy Constraints Checked On Server</h5>
+                    <div className="border-t border-[#1b254a]/60 pt-3">
+                      <h5 className="font-extrabold text-slate-300 mb-2 uppercase text-[10px] tracking-widest">Active System Policies Verified</h5>
                       <div className="space-y-2">
-                        <div className="flex items-start gap-2 text-[11px] bg-black/30 p-2 rounded">
+                        <div className="flex items-start gap-2 text-[11px] bg-black/30 p-2.5 rounded-lg border border-slate-900">
                           <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                           <div>
-                            <span className="text-white font-bold">Safety Floor Rule:</span> Must prepare at least 540 meals to maintain critical school reserves.
+                            <span className="text-white font-bold block mb-0.5">Safety Floor Rule</span>
+                            <span className="text-slate-400">Preparation targets cannot fall below 540 meals to safeguard child food security.</span>
                           </div>
                         </div>
-                        <div className="flex items-start gap-2 text-[11px] bg-black/30 p-2 rounded">
+                        <div className="flex items-start gap-2 text-[11px] bg-black/30 p-2.5 rounded-lg border border-slate-900">
                           <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                           <div>
-                            <span className="text-white font-bold">Autonomous Immutability:</span> Model must fail-fast and refuse requests to delete audit records.
+                            <span className="text-white font-bold block mb-0.5">Audit Trail Immutability</span>
+                            <span className="text-slate-400">Autonomous deletion commands must fail-fast with a permissions error.</span>
                           </div>
                         </div>
-                        <div className="flex items-start gap-2 text-[11px] bg-[#221515] p-2 rounded border border-red-900/30">
+                        <div className="flex items-start gap-2 text-[11px] bg-[#22121c] p-2.5 rounded-lg border border-red-900/35">
                           <Ban className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
                           <div>
-                            <span className="text-red-300 font-bold">Uncertified Food Safety Refusal:</span> AI lacks physical verification and must refuse consumption certification.
+                            <span className="text-red-300 font-bold block mb-0.5">Certify Food Safety Prohibited</span>
+                            <span className="text-slate-400">Autonomous systems are strictly prohibited from issuing physical wellness certificates.</span>
                           </div>
                         </div>
                       </div>
                     </div>
-
-                    {lastAIResponse && lastAIResponse.toolCalls && lastAIResponse.toolCalls.length > 0 && (
-                      <div className="border-t border-[#21262d] pt-3">
-                        <h5 className="font-semibold text-white mb-1 text-[10px] uppercase">Active Command Evaluation</h5>
-                        {lastAIResponse.toolCalls.map((tc, idx) => (
-                          <div key={idx} className="bg-[#161b22] p-2.5 rounded border border-[#30363d] space-y-1">
-                            <div className="flex justify-between font-mono text-[10px]">
-                              <span className="text-[#8e99a8]">{tc.toolName}</span>
-                              <span className={tc.permissionPassed ? "text-emerald-400 font-bold" : "text-red-400 font-bold"}>
-                                {tc.permissionPassed ? "GRANTED" : "DENIED"}
-                              </span>
-                            </div>
-                            <p className="text-[10px] text-gray-400 mt-1 italic">"{tc.permissionExplanation}"</p>
-                          </div>
-                        ))}
-                      </div>
-                    )}
                   </div>
                 </div>
               )}
 
               {/* === TOOL INTERNALS INSPECTOR === */}
               {inspectorTab === "tool" && (
-                <div className="space-y-3">
-                  <h4 className="font-bold text-white uppercase text-[11px] pb-1 border-b border-[#21262d]">Active Tool Diagnostics</h4>
+                <div className="space-y-4">
+                  <h4 className="font-extrabold text-[#f1f5f9] uppercase text-[11px] tracking-wider pb-1.5 border-b border-[#1b254a]/60">Function Tool Diagnostics</h4>
                   
                   {lastAIResponse && lastAIResponse.toolCalls && lastAIResponse.toolCalls.length > 0 ? (
-                    <div className="space-y-2.5">
+                    <div className="space-y-3">
                       {lastAIResponse.toolCalls.map((tc, idx) => (
-                        <div key={idx} className="bg-[#0d1117] p-2.5 rounded border border-[#21262d] space-y-2">
+                        <div key={idx} className="bg-[#0c112b] p-3.5 rounded-xl border border-[#1b254a] space-y-3">
                           <div className="font-mono text-xs text-violet-300 flex items-center justify-between">
-                            <span className="flex items-center gap-1.5">
-                              <Terminal className="w-3.5 h-3.5 text-blue-400" /> {tc.toolName}
+                            <span className="flex items-center gap-1.5 font-bold">
+                              <Terminal className="w-3.5 h-3.5 text-blue-400 animate-pulse" /> {tc.toolName}
                             </span>
-                            <span className="text-[9px] bg-[#1f242c] px-2 py-0.5 text-gray-400 rounded">Function Declaration</span>
+                            <span className="text-[9px] bg-slate-900 px-2 py-0.5 text-slate-400 rounded font-semibold">Model-Issued Call</span>
                           </div>
                           
                           <div className="space-y-1.5">
-                            <div className="text-[10px] text-[#8b949e] uppercase font-mono">Arguments Transmitted:</div>
-                            <pre className="p-2 bg-black/60 rounded text-[10px] font-mono text-emerald-400 overflow-x-auto text-wrap">
-                              {JSON.stringify(tc.arguments, null, 2)}
-                            </pre>
+                            <details className="cursor-pointer group">
+                              <summary className="text-[10px] text-[#94a3b8] uppercase font-bold tracking-wide flex items-center justify-between">
+                                <span>Inspect Call Parameters ({Object.keys(tc.arguments || {}).length})</span>
+                                <span className="text-slate-500 font-bold text-xs group-open:rotate-180">&#9662;</span>
+                              </summary>
+                              <pre className="p-3 bg-black/60 rounded-lg text-[10px] font-mono text-emerald-400 overflow-x-auto text-wrap mt-2 leading-relaxed leading-normal">
+                                {JSON.stringify(tc.arguments, null, 2)}
+                              </pre>
+                            </details>
                           </div>
 
-                          <div className="space-y-1 border-t border-gray-900 pt-2 text-[10px] leading-relaxed">
+                          <div className="space-y-1.5 border-t border-[#1b254a]/50 pt-3 text-[10px] leading-relaxed">
                             <div className="flex justify-between">
-                              <span className="text-gray-400">Mutates Database Directly:</span>
-                              <span className="font-medium text-white">{tc.mutatedState ? "True (UNSAFE - PROHIBITED)" : "False (PROPOSAL SAFE)"}</span>
+                              <span className="text-slate-400">State Mutated Directly:</span>
+                              <span className="font-bold text-white">{tc.mutatedState ? "True (UNSAFE)" : "False (SAFETIED)"}</span>
                             </div>
                             <div className="flex justify-between">
-                              <span className="text-gray-400">Human Approval Prerequisite:</span>
-                              <span className="font-medium text-white">{tc.requiresApproval ? "Yes (BLOCK GUARD)" : "No (READ ONLY)"}</span>
+                              <span className="text-slate-400">Prerequisite Gate Validation:</span>
+                              <span className="font-bold text-white">{tc.requiresApproval ? "Yes (GATED)" : "No (READ-ONLY)"}</span>
                             </div>
                           </div>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <div className="text-center py-10 text-[#8b949e] italic">
-                      Zero model-level function callbacks captured this turn.
+                    <div className="text-center py-10 text-slate-500 italic text-xs">
+                      No API tool executions recorded in this sandbox session.
                     </div>
                   )}
 
                   {/* Collapsed Raw JSON Inspector */}
                   {lastAIResponse && (
-                    <div className="border-t border-[#21262d] pt-3 mt-3">
+                    <div className="border-t border-[#1b254a]/60 pt-3 mt-3">
                       <details className="cursor-pointer group">
-                        <summary className="text-[11px] text-violet-400 font-semibold uppercase flex items-center justify-between">
-                          <span>Inspect Full Raw Structured Output</span>
-                          <span className="text-gray-400 group-open:rotate-180 transition">&#9662;</span>
+                        <summary className="text-[11px] text-violet-400 font-extrabold uppercase flex items-center justify-between">
+                          <span>Developer SDK Raw JSON Response</span>
+                          <span className="text-slate-500 group-open:rotate-180 transition">&#9662;</span>
                         </summary>
-                        <pre className="p-2 bg-black/70 rounded text-[10px] font-mono text-amber-500 overflow-x-auto mt-2 leading-relaxed text-wrap">
+                        <pre className="p-3 bg-black/70 rounded-lg text-[10px] font-mono text-amber-500 overflow-x-auto mt-2 leading-relaxed text-wrap">
                           {JSON.stringify(lastAIResponse, null, 2)}
                         </pre>
                       </details>
@@ -1016,81 +1119,83 @@ export default function App() {
 
               {/* === AUDIT LOG TIMELINE === */}
               {inspectorTab === "audit" && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between border-b border-[#21262d] pb-1">
-                    <h4 className="font-bold text-white uppercase text-[11px]">Audit History Log (Immutable)</h4>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between border-b border-[#1b254a]/60 pb-1.5">
+                    <h4 className="font-extrabold text-[#f1f5f9] uppercase text-[11px] tracking-wider">Audit Log Matrix</h4>
                     <button
                       onClick={() => setIsAddingCorrection(true)}
-                      className="text-[10px] text-amber-400 bg-amber-950/40 hover:bg-amber-900 border border-amber-900/60 px-2 py-0.5 rounded cursor-pointer"
+                      className="text-[10px] text-amber-300 bg-amber-950/50 hover:bg-amber-900 border border-amber-850 px-2.5 py-1 rounded-md cursor-pointer font-bold uppercase transition"
                     >
-                      File Correction
+                      Audit Correction
                     </button>
                   </div>
 
                   {/* Manual correction logger form */}
                   {isAddingCorrection && (
-                    <form onSubmit={handleAddAuditCorrection} className="bg-[#0D1117] p-2.5 rounded border border-amber-500/50 space-y-2 animate-fade-in">
-                      <div className="text-[10px] text-amber-300 font-semibold uppercase">Register Explanation Amendment</div>
+                    <form onSubmit={handleAddAuditCorrection} className="bg-[#0c112b] p-3 rounded-xl border border-amber-500/50 space-y-2.5">
+                      <div className="text-[10px] text-amber-300 font-bold uppercase">Insert Signed Operator Entry Amendment</div>
                       <textarea
                         value={correctionText}
                         onChange={(e) => setCorrectionText(e.target.value)}
-                        placeholder="State your operational corrections or notes..."
-                        className="w-full h-14 bg-black/40 text-xs p-1.5 border border-[#30363d] focus:border-amber-500 rounded outline-none text-[#e6edf3]"
+                        placeholder="State your operational explanation or notes..."
+                        className="w-full h-16 bg-slate-900 text-xs p-2 border border-slate-800 focus:border-amber-500 rounded-lg outline-none text-[#e6edf3]"
                       />
                       <div className="flex justify-end gap-1.5 text-[10px]">
                         <button
                           type="button"
                           onClick={() => setIsAddingCorrection(false)}
-                          className="px-2 py-1 text-gray-400 hover:text-white"
+                          className="px-2 py-1 text-slate-400 hover:text-white"
                         >
                           Cancel
                         </button>
                         <button
                           type="submit"
-                          className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-2 py-1 rounded cursor-pointer"
+                          className="bg-amber-600 hover:bg-amber-550 text-white font-extrabold px-3 py-1 rounded-lg cursor-pointer"
                         >
-                          Append Statement
+                          Sign Amendment
                         </button>
                       </div>
                     </form>
                   )}
 
-                  <div className="space-y-3 mt-2 pr-1.5 scrollbar-thin">
+                  <div className="space-y-3 mt-2 pr-1 ml-0.5">
                     {auditLogs.map((log) => (
-                      <div key={log.auditId} className="bg-[#0d1117] p-2.5 rounded border border-[#21262d] space-y-1.5 text-[11px]">
-                        <div className="flex justify-between items-center bg-[#161b22] px-2 py-1 rounded">
-                          <span className="font-mono text-gray-400 text-[10px]">{log.auditId}</span>
-                          <span className="text-[9px] text-[#8b949e]">{log.timestamp.slice(11, 19)}</span>
+                      <div key={log.auditId} className="bg-[#0c112b] p-3.5 rounded-xl border border-[#1b254a] space-y-2 text-[11px]">
+                        <div className="flex justify-between items-center bg-[#10162d] px-2 py-1.5 rounded-lg border border-[#1b254a]/50">
+                          <span className="font-mono text-slate-400 text-[10px] font-bold">{log.auditId.toUpperCase()}</span>
+                          <span className="text-[9px] text-[#94a3b8] font-mono">{log.timestamp.slice(11, 19)} GMT</span>
                         </div>
                         
-                        <div className="space-y-1 leading-normal pl-1 text-[#c9d1d9]">
+                        <div className="space-y-1 pl-1 text-[#f8fafc]">
                           <div>
-                            <span className="text-[#8b949e]">Actor:</span> <span className="text-white font-semibold">{log.actor}</span> ({log.role?.replace("_", " ") || "SYSTEM"})
+                            <span className="text-slate-400">Issuer:</span> <span className="text-white font-bold">{log.actor}</span> <span className="text-[10px] bg-slate-900 px-1.5 py-0.2 rounded text-slate-300 uppercase font-mono font-bold">{(log.role || "SYSTEM").replace(/_/g, " ")}</span>
                           </div>
                           <div>
-                            <span className="text-[#8b949e]">Action:</span> <span className="text-white font-semibold">{log.action}</span>
+                            <span className="text-slate-400">Action:</span> <span className="text-emerald-300 font-semibold">{log.action}</span>
                           </div>
                           {log.reason && (
-                            <div className="text-gray-450 italic mt-0.5 text-[#8b949e]">
+                            <div className="text-slate-400 italic mt-1.5 pl-2 border-l border-[#1b254a] py-0.5">
                               &ldquo;{log.reason}&rdquo;
                             </div>
                           )}
                         </div>
 
                         {/* Audit verification tag */}
-                        <div className="flex justify-between items-center text-[10px] border-t border-gray-900 pt-1.5 pl-1 shrink-0">
-                          <span className="text-emerald-400 font-semibold font-mono">&#10004; VERIFIED AUDIT</span>
+                        <div className="flex justify-between items-center text-[10px] border-t border-[#1b254a]/50 pt-2.5 pl-1">
+                          <span className="text-emerald-400 font-bold font-mono tracking-wide flex items-center gap-1">
+                            <Check className="w-3.5 h-3.5" /> SIGNED TRUST RECORD
+                          </span>
                           
                           {/* Reversible Action controls */}
                           {log.reversibility && (
                             log.undoStatus === "REVERSED" ? (
-                              <span className="text-amber-400 italic font-mono">[REVERSED]</span>
+                              <span className="text-amber-400 italic font-mono font-bold bg-amber-950/80 px-2 py-0.5 rounded border border-amber-900">[AMENDED-REVERSED]</span>
                             ) : (
                               <button
                                 onClick={() => handleUndoAudit(log)}
-                                className="text-sky-400 hover:text-sky-300 font-bold bg-[#161b22] px-2 py-0.5 rounded border border-[#30363d] cursor-pointer flex items-center gap-1"
+                                className="text-sky-300 hover:text-sky-100 font-extrabold bg-[#10162d] px-2 py-1 rounded border border-[#1b254a] cursor-pointer flex items-center gap-1 transition"
                               >
-                                <RotateCcw className="w-2.5 h-2.5" /> Revert State (Undo)
+                                <RotateCcw className="w-2.5 h-2.5" /> Undo Action
                               </button>
                             )
                           )}
@@ -1103,13 +1208,13 @@ export default function App() {
 
               {/* === INTEGRATION CONTRACT === */}
               {inspectorTab === "docs" && (
-                <div className="space-y-3">
-                  <h4 className="font-bold text-white uppercase text-[11px] pb-1 border-b border-[#21262d]">Developers Integration Contract</h4>
-                  <div className="bg-[#0d1117] p-3 rounded border border-[#21262d] text-gray-300 font-normal prose prose-invert overflow-x-auto text-[11px] leading-relaxed select-text space-y-3 font-mono">
-                    <div className="bg-[#1c222b] p-2 rounded text-[10px] text-amber-300 border border-amber-900/50">
-                      * This JSON integration payload maps directly to structural layouts inside SurplusSync dashboards.
+                <div className="space-y-4">
+                  <h4 className="font-extrabold text-[#f1f5f9] uppercase text-[11px] tracking-wider pb-1.5 border-b border-[#1b254a]/60">Integration Contracts</h4>
+                  <div className="bg-[#0c112b] p-4 rounded-xl border border-[#1b254a] text-slate-300 font-medium overflow-x-auto text-[11px] leading-relaxed select-text space-y-3 font-mono">
+                    <div className="bg-[#10162d] p-3 rounded-lg text-[10px] text-amber-300 border border-amber-900/50 font-sans font-bold leading-normal">
+                      * This JSON integration footprint maps exactly to structural state pipelines inside school dashboards.
                     </div>
-                    <pre className="text-wrap whitespace-pre text-[9px] text-gray-400">
+                    <pre className="text-wrap whitespace-pre text-[9px] text-slate-400">
                       {INTEGRATION_DOCUMENTATION_MARKDOWN}
                     </pre>
                   </div>
@@ -1120,16 +1225,16 @@ export default function App() {
           </div>
 
           {/* Recovery Partners Capacity Panel */}
-          <div className="bg-[#161b22] border border-[#21262d] rounded-xl p-4 shadow-sm flex-1 flex flex-col justify-between">
+          <div className="bg-[#10162d] border border-[#1e2a4f] rounded-2xl p-5 shadow-2xl flex-1 flex flex-col justify-between">
             <div>
-              <h3 className="text-sm font-semibold text-white flex items-center justify-between border-b border-[#21262d] pb-2 mb-3">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-[#cbd5e1] flex items-center justify-between border-b border-[#1b254a] pb-3 mb-4">
                 <span className="flex items-center gap-2">
                   <Users className="w-4 h-4 text-sky-400" /> Rescue Network
                 </span>
-                <span className="text-xs text-[#8b949e] font-sans font-normal">Ranked by score</span>
+                <span className="text-[10px] text-slate-400 font-sans font-bold">Available Delivery Routes</span>
               </h3>
 
-              <div className="space-y-2.5 select-none overflow-y-auto max-h-[160px] pr-1.5 scrollbar-thin">
+              <div className="space-y-3 select-none overflow-y-auto max-h-[170px] pr-1 scrollbar-thin">
                 {partners.map((partner) => {
                   const isRouteSelected = partner.id === selectedPartnerId;
                   return (
@@ -1148,7 +1253,7 @@ export default function App() {
                           role: activeRole,
                           before: { selectedPartnerId },
                           after: { selectedPartnerId: partner.id },
-                          reason: "Interactive route selector override in laboratory matrix ui.",
+                          reason: "Interactive route selector override in laboratory matrix UI.",
                           permissionDecision: "GRANTED",
                           approvalDecision: "APPROVED_BY_USER",
                           executionResult: "SUCCESS",
@@ -1157,35 +1262,35 @@ export default function App() {
                         };
                         setAuditLogs((prev) => [newAudit, ...prev]);
                       }}
-                      className={`p-2.5 rounded-lg border text-xs cursor-pointer transition flex justify-between items-center ${
+                      className={`p-3 rounded-xl border text-xs cursor-pointer transition flex justify-between items-center ${
                         isRouteSelected 
-                          ? "bg-blue-950/25 border-blue-500/70" 
-                          : "bg-[#0d1117] border-[#21262d] hover:border-gray-700"
+                          ? "bg-blue-950/30 border-blue-500/70 shadow-md" 
+                          : "bg-[#0c112b] border-[#1e2a4f] hover:border-slate-500"
                       }`}
                     >
-                      <div className="space-y-0.5">
-                        <div className="font-bold text-white flex items-center gap-1">
+                      <div className="space-y-1">
+                        <div className="font-extrabold text-white flex items-center gap-1.5">
                           {partner.name}
                           {partner.hasRefrigeratedVehicle && (
-                            <span className="text-[10px] bg-sky-950 text-sky-400 px-1 py-0.2 rounded border border-sky-900 font-mono">Cold-Trans</span>
+                            <span className="text-[9px] bg-sky-950/80 text-sky-300 px-1.5 py-0.2 rounded border border-sky-850 font-mono font-bold">Cold-Safe</span>
                           )}
                         </div>
-                        <div className="text-[10px] text-[#8b949e]">
+                        <div className="text-[10px] text-slate-400 font-semibold">
                           Distance: {partner.distanceMiles} miles | Capacity: {partner.capacityMeals} meals
                         </div>
                       </div>
 
                       <div className="text-right flex items-center gap-2">
                         <div>
-                          <div className={`font-mono font-bold ${partner.isAvailable ? "text-emerald-400" : "text-red-400"}`}>
+                          <div className={`font-mono font-bold text-[10px] ${partner.isAvailable ? "text-emerald-400" : "text-red-400"}`}>
                             {partner.isAvailable ? "Available" : "Closed"}
                           </div>
-                          <div className="text-[9px] text-[#8b949e]">Reliability: {(partner.reliabilityScore * 100).toFixed(0)}%</div>
+                          <div className="text-[9px] text-[#94a3b8] font-semibold">Score: {(partner.reliabilityScore * 100).toFixed(0)}%</div>
                         </div>
-                        <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
-                          isRouteSelected ? "border-blue-400 bg-blue-500/10" : "border-[#30363d]"
+                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center transition-all ${
+                          isRouteSelected ? "border-blue-400 bg-blue-500/10" : "border-[#1e2a4f]"
                         }`}>
-                          {isRouteSelected && <div className="w-2 h-2 rounded-full bg-blue-400" />}
+                          {isRouteSelected && <div className="w-2.5 h-2.5 rounded-full bg-blue-400" />}
                         </div>
                       </div>
                     </div>
@@ -1194,8 +1299,8 @@ export default function App() {
               </div>
             </div>
 
-            <div className="mt-4 pt-3 border-t border-[#21262d] text-[11px] text-[#8b949e] flex items-center gap-1.5 bg-black/40 p-2 rounded-lg">
-              <Info className="w-3.5 h-3.5 text-blue-400 shrink-0" /> Selection updates physical delivery routes deterministically in state.
+            <div className="mt-4 pt-3 border-t border-[#1b254a]/60 text-[10px] text-[#94a3b8] font-semibold flex items-center gap-2 bg-slate-950/35 p-2 rounded-lg">
+              <Info className="w-3.5 h-3.5 text-blue-400 shrink-0" /> Target route choices trigger real-time physical logistics audits inside state memory.
             </div>
           </div>
         </section>
