@@ -48,6 +48,7 @@ describe("ForecastProvider", () => {
     const result = await provider.getAttendanceForecast();
     expect(result.forecast.expectedAttendance).toBe(528);
     expect(result.forecast.recommendedPrep).toBe(562);
+    expect(result.forecast.shortageProb).toBe(0.041);
     expect(result.provenance.source).toBe("ml");
     expect(result.provenance.approvalRequired).toBe(true);
     expect(result.provenance.decisionStatus).toBe("PROPOSED");
@@ -64,6 +65,11 @@ describe("ForecastProvider", () => {
     const result = await provider.simulateAttendanceCorrection();
     expect(result.forecast.expectedAttendance).toBe(540);
     expect(result.forecast.recommendedPrep).toBe(575);
+    expect(result.forecast.intervalLow).toBe(512);
+    expect(result.forecast.intervalHigh).toBe(568);
+    expect(result.forecast.preventableSurplus).toBe(155);
+    expect(result.forecast.shortageProb).toBe(0.034);
+    expect(result.provenance.source).toBe("ml");
   });
 
   it("rejects malformed ML response", async () => {

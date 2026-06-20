@@ -63,6 +63,10 @@ describe("tool loop", () => {
     const output = result.toolCalls[0].returnedValue as Record<string, unknown>;
     expect(output.expectedAttendance).toBe(540);
     expect(output.recommendedPrep).toBe(575);
+    expect(output.preventableSurplus).toBe(155);
+    const provenance = output.provenance as { source: string; fallbackUsed: boolean };
+    expect(provenance.source).toBe("ml");
+    expect(provenance.fallbackUsed).toBe(false);
     expect(getSessionState(session.sessionId)!.forecast.expectedAttendance).toBe(before);
   });
 
