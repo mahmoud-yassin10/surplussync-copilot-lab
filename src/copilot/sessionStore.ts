@@ -74,6 +74,18 @@ export function getSessionState(sessionId: string): SessionSnapshot | null {
   return session ? toSnapshot(session) : null;
 }
 
+export function getKnownPartnerIds(sessionId?: string): string[] {
+  if (sessionId) {
+    const session = sessions.get(sessionId);
+    if (session) return session.partners.map((p) => p.id);
+  }
+  return structuredClone(INITIAL_PARTNERS).map((p) => p.id);
+}
+
+export function deleteIntegrationSession(sessionId: string): boolean {
+  return sessions.delete(sessionId);
+}
+
 export function updateSessionRole(sessionId: string, role: UserRole): SessionSnapshot | null {
   const session = sessions.get(sessionId);
   if (!session) return null;
