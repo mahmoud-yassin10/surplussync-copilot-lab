@@ -15,6 +15,7 @@ import {
   clearAllSessions,
   expireProposalForTest,
   getSession,
+  updatePartnerPrerequisitesForTest,
 } from "../sessionStore";
 import { UserRole } from "../../types";
 
@@ -218,6 +219,14 @@ describe("HTTP integration — Copilot Lab API", () => {
 
   it("partner selection does not mutate state without approval", async () => {
     const created = await createSessionViaHttp(app, UserRole.CAFETERIA_MANAGER);
+    updatePartnerPrerequisitesForTest(created.sessionId, {
+      surplusConfirmed: true,
+      surplusMeals: 64,
+      foodSafetyChecklistComplete: true,
+      recoveryWindowValid: true,
+      proposalsPermitted: true,
+      revision: 1,
+    });
     const before = await request(app).get(`/api/session/${created.sessionId}/state`);
     expect(before.body.state.selectedPartnerId).toBe("metro-food-bank");
 

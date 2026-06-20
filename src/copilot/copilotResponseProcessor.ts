@@ -44,6 +44,7 @@ export function processCopilotResponse(
     proposals: session.proposals,
     selectedPartnerId: session.selectedPartnerId,
     alertStatus: session.alertStatus,
+    partnerPrerequisites: session.partnerPrerequisites,
   };
 
   const toolCalls = draft.toolCalls.map((tc) => {

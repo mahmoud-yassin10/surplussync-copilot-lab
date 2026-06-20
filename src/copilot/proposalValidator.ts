@@ -42,6 +42,9 @@ export interface PolicyCheck {
   explanation: string;
 }
 
+export const PARTNER_PREREQUISITES_INCOMPLETE = "PARTNER_PREREQUISITES_INCOMPLETE";
+export const PARTNER_SELECTION_PROPOSAL_STALE = "PARTNER_SELECTION_PROPOSAL_STALE";
+
 function evaluatePolicyChecks(
   actionType: ActionType,
   after: Record<string, unknown>,
@@ -74,12 +77,54 @@ function evaluatePolicyChecks(
     case "PARTNER_SELECTION": {
       const partnerId = after.selectedPartnerId as string;
       const partner = session.partners.find((p) => p.id === partnerId);
+      const prereq = session.partnerPrerequisites;
       checks.push({
         policy: "Partner Availability",
         passed: !!partner?.isAvailable,
         explanation: partner?.isAvailable
           ? `Partner ${partner.name} is available for routing.`
           : `Partner ${partnerId} is unavailable or unknown.`,
+      });
+      checks.push({
+        policy: "Surplus Confirmed",
+        passed: prereq.surplusConfirmed && typeof prereq.surplusMeals === "number" && prereq.surplusMeals > 0,
+        explanation:
+          prereq.surplusConfirmed && typeof prereq.surplusMeals === "number" && prereq.surplusMeals > 0
+            ? `Confirmed surplus is ${prereq.surplusMeals} meals.`
+            : "Surplus must be confirmed before partner selection.",
+      });
+      checks.push({
+        policy: "Food Safety Checklist",
+        passed: prereq.foodSafetyChecklistComplete,
+        explanation: prereq.foodSafetyChecklistComplete
+          ? "Required food-safety checklist is complete."
+          : "Required food-safety checklist is incomplete.",
+      });
+      checks.push({
+        policy: "Recovery Window",
+        passed: prereq.recoveryWindowValid,
+        explanation: prereq.recoveryWindowValid
+          ? "Recovery window is still valid."
+          : "Recovery window is missing or no longer valid.",
+      });
+      checks.push({
+        policy: "Proposal Mode",
+        passed: prereq.proposalsPermitted,
+        explanation: prereq.proposalsPermitted
+          ? "Current session mode permits executable proposals."
+          : "Current session mode blocks executable proposals.",
+      });
+      checks.push({
+        policy: "Partner Capacity",
+        passed:
+          !!partner &&
+          typeof prereq.surplusMeals === "number" &&
+          prereq.surplusMeals > 0 &&
+          partner.capacityMeals >= prereq.surplusMeals,
+        explanation:
+          partner && typeof prereq.surplusMeals === "number" && prereq.surplusMeals > 0
+            ? `${partner.name} capacity is ${partner.capacityMeals} meals for ${prereq.surplusMeals} confirmed surplus meals.`
+            : "Partner capacity cannot be evaluated until surplus is confirmed.",
       });
       break;
     }
@@ -118,7 +163,12 @@ function getExpectedBeforeState(
     case "PREPARATION_OVERRIDE":
       return { currentPreparationPlan: session.school.currentPreparationPlan };
     case "PARTNER_SELECTION":
-      return { selectedPartnerId: session.selectedPartnerId };
+      return {
+        selectedPartnerId: session.selectedPartnerId,
+        partnerPrerequisitesRevision: session.partnerPrerequisites.revision,
+        partnerPrerequisitesResetVersion: session.partnerPrerequisites.resetVersion,
+        partnerPrerequisitesCancellationVersion: session.partnerPrerequisites.cancellationVersion,
+      };
     case "SURPLUS_ALERT":
       return { alertStatus: session.alertStatus };
     case "ALERT_CANCELLATION":
@@ -198,7 +248,10 @@ export function sanitizeProposals(
 
     if (!allPolicyChecksPassed(policyChecks)) {
       rejected.push({
-        reason: `Policy check failed for ${actionType}`,
+        reason:
+          actionType === "PARTNER_SELECTION"
+            ? PARTNER_PREREQUISITES_INCOMPLETE
+            : `Policy check failed for ${actionType}`,
         actionType,
       });
       continue;
@@ -208,7 +261,13 @@ export function sanitizeProposals(
       ([key, value]) => draft.before?.[key] === undefined || draft.before[key] === value
     );
     if (!beforeMatches) {
-      rejected.push({ reason: `Stale before-state for ${actionType}`, actionType });
+      rejected.push({
+        reason:
+          actionType === "PARTNER_SELECTION"
+            ? "PARTNER_SELECTION_PROPOSAL_STALE"
+            : `Stale before-state for ${actionType}`,
+        actionType,
+      });
       continue;
     }
 
@@ -286,12 +345,37 @@ export function validateProposalForExecution(
     ([key, value]) => proposal.before[key] !== value
   );
   if (isStale) {
-    return { ok: false, statusCode: 409, error: "Proposal before-state no longer matches session" };
+    return {
+      ok: false,
+      statusCode: 409,
+      error:
+        proposal.actionType === "PARTNER_SELECTION"
+          ? "PARTNER_SELECTION_PROPOSAL_STALE"
+          : "Proposal before-state no longer matches session",
+    };
   }
 
   const policyChecks = evaluatePolicyChecks(proposal.actionType, proposal.after, session);
   if (!allPolicyChecksPassed(policyChecks)) {
-    return { ok: false, statusCode: 422, error: "Policy checks failed at execution time" };
+    return {
+      ok: false,
+      statusCode: 422,
+      error:
+        proposal.actionType === "PARTNER_SELECTION"
+          ? PARTNER_PREREQUISITES_INCOMPLETE
+          : "Policy checks failed at execution time",
+    };
+  }
+
+  if (proposal.actionType === "PARTNER_SELECTION") {
+    const prereqStillCurrent =
+      proposal.before.partnerPrerequisitesRevision === session.partnerPrerequisites.revision &&
+      proposal.before.partnerPrerequisitesResetVersion === session.partnerPrerequisites.resetVersion &&
+      proposal.before.partnerPrerequisitesCancellationVersion ===
+        session.partnerPrerequisites.cancellationVersion;
+    if (!prereqStillCurrent) {
+      return { ok: false, statusCode: 409, error: "PARTNER_SELECTION_PROPOSAL_STALE" };
+    }
   }
 
   return { ok: true, statusCode: 200 };
