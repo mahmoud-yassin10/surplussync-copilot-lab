@@ -145,7 +145,7 @@ export function executeMockCopilot(message: string, role: UserRole, currentPlan:
       proposalId,
       actionType: "PARTNER_SELECTION",
       title: "Propose Recovery Route Override to Harbor Family Shelter",
-      summary: "Redirect surplus distribution route from Metro Community Food Bank to Harbor Family Shelter for 2026-06-25.",
+      summary: "Redirect surplus distribution route from Metro Community Food Bank to Harbor Family Shelter for 2026-03-12.",
       reason: message || "Metro Food Bank vehicle transport unavailable.",
       requestedByRole: role,
       affectedEntities: [
@@ -277,15 +277,15 @@ export function executeMockCopilot(message: string, role: UserRole, currentPlan:
       proposalId,
       actionType: "ATTENDANCE_UPDATE",
       title: "Correct Expected Attendance Count (Trip Cancelled)",
-      summary: "Revise Thursday expectance forecast inputs from 468 students up to 540 students based on cancellations of Grade 10 off-site excursion.",
+      summary: "Revise Thursday expectance forecast inputs from 528 students up to 540 students based on cancellations of Grade 10 off-site excursion.",
       reason: "Manual correction: Grade 10 field trip cancelled due to hazardous rainy weather warning.",
       requestedByRole: role,
       affectedEntities: [{ type: "SCHOOL", id: "lincoln-heights", label: "Lincoln Heights High School" }],
-      before: { expectedAttendance: 468 },
-      after: { expectedAttendance: 540 },
+      before: { expectedAttendance: 528, recommendedPreparation: 562 },
+      after: { expectedAttendance: 540, recommendedPreparation: 575 },
       expectedConsequences: [
         "Recalculating forecast model with stable attendance parameters.",
-        "Adjusts recommended preparation level from 562 up to 572.",
+        "Adjusts recommended preparation level from 562 up to 575.",
         "Mitigates meal shortage risk as registered counts are restored."
       ],
       risks: [
@@ -306,7 +306,7 @@ export function executeMockCopilot(message: string, role: UserRole, currentPlan:
         : `ACCESS DENIED: Role ${role} cannot override school forecast constants or calendar states. Only the School Administrator (Daniel Brooks) holds permission.`,
       answerType: "EXPLANATION",
       evidence: [
-        { label: "Original Baseline", value: "468 meals (with field trip off)", sourceType: "SCHOOL_RECORD" },
+        { label: "Original Baseline", value: "528 students (with field trip off)", sourceType: "SCHOOL_RECORD" },
         { label: "Revised Baseline", value: "540 meals", sourceType: "USER_INPUT" }
       ],
       provenance: [
@@ -317,7 +317,7 @@ export function executeMockCopilot(message: string, role: UserRole, currentPlan:
       toolCalls: [
         {
           toolName: "propose_attendance_update",
-          arguments: { schoolId: "lincoln-heights", date: "2026-06-25", oldValue: 468, proposedValue: 540, reason: "Grade 10 field trip cancelled" },
+          arguments: { schoolId: "lincoln-heights", date: "2026-03-12", oldValue: 528, proposedValue: 540, reason: "Grade 10 field trip cancelled" },
           permissionPassed: passed,
           permissionExplanation: perm.explanation,
           mutatedState: false,
@@ -333,13 +333,13 @@ export function executeMockCopilot(message: string, role: UserRole, currentPlan:
   if (normalized.includes("attendance") && normalized.includes("540")) {
     const perm = checkPermission(role, "simulate_attendance");
     return {
-      answer: "SIMULATION OUTCOME: No operational state was written. In this simulated projection, setting student attendance to 540 increases the recommended food preparation count to 572 meals. The shortage probability drops down to 1.1%, and expected recoverable surplus drops to 12.0%. This confirms that the current Thursday plan (730 meals) would create highly redundant food waste (158 meals left over) because of general exam early dismissals.",
+      answer: "SIMULATION OUTCOME: No operational state was written. In this simulated projection, setting student attendance to 540 increases the recommended food preparation count to 575 meals. The shortage probability drops down to 1.1%, and expected recoverable surplus drops to 12.0%. This confirms that the current Thursday plan (730 meals) would create highly redundant food waste (155 meals left over) because of general exam early dismissals.",
       answerType: "SIMULATION",
       evidence: [
         { label: "Simulated Attendance", value: "540 students", sourceType: "USER_INPUT" },
-        { label: "Simulated Recommended Prep", value: "572 meals", sourceType: "MODEL_OUTPUT" },
+        { label: "Simulated Recommended Prep", value: "575 meals", sourceType: "MODEL_OUTPUT" },
         { label: "Simulated Shortage Risk", value: "1.1%", sourceType: "MODEL_OUTPUT" },
-        { label: "Original Plan Leftover", value: "158 surplus meals", sourceType: "MODEL_OUTPUT" }
+        { label: "Original Plan Leftover", value: "155 surplus meals", sourceType: "MODEL_OUTPUT" }
       ],
       provenance: [
         { source: "ssp-forecast-1.0 Simulation Module", status: "SYNTHETIC" }
@@ -397,7 +397,7 @@ export function executeMockCopilot(message: string, role: UserRole, currentPlan:
   if (normalized.includes("why") || normalized.includes("explain") || normalized.includes("risk")) {
     const perm = checkPermission(role, "explain_forecast");
     return {
-      answer: "EXPLANATORY REASONING EVIDENCE: Thursday, June 25, is cataloged as HIGH RISK because of multiple compounding operational interruptions. Attendance is forecast to plunge by 35% compared to regular days. Compounding Factors: 1) High School Examination Schedule (early dismissal, students eat offsite), 2) Grade 10 Outing (92 students offsite), 3) Severe Thunderstorm Advisory (restricts on-site stayers). Maintaining the default catering schedule of 730 meals creates a massive risk of wasting 168 portions of fresh cooked food.",
+      answer: "EXPLANATORY REASONING EVIDENCE: Thursday, March 12, 2026, is cataloged as HIGH RISK because of multiple compounding operational interruptions. Attendance is forecast to plunge by 35% compared to regular days. Compounding Factors: 1) High School Examination Schedule (early dismissal, students eat offsite), 2) Grade 10 Outing (92 students offsite), 3) Severe Thunderstorm Advisory (restricts on-site stayers). Maintaining the default catering schedule of 730 meals creates a massive risk of wasting 168 portions of fresh cooked food.",
       answerType: "EXPLANATION",
       evidence: [
         { label: "Normal Daily Preparation", value: "730 meals", sourceType: "SCHOOL_RECORD" },
@@ -443,7 +443,7 @@ export function executeMockCopilot(message: string, role: UserRole, currentPlan:
     toolCalls: [
       {
         toolName: "get_forecast",
-        arguments: { schoolId: "lincoln-heights", date: "2026-06-25" },
+        arguments: { schoolId: "lincoln-heights", date: "2026-03-12" },
         permissionPassed: true,
         permissionExplanation: perm.explanation,
         mutatedState: false,

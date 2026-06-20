@@ -72,6 +72,8 @@ export interface AIActionProposal {
   reversible: boolean;
   status: "PENDING_APPROVAL" | "APPROVED" | "REJECTED" | "EXECUTED" | "UNDONE";
   createdAt: string;
+  /** Server-assigned expiry for pending proposals (ISO 8601). */
+  expiresAt?: string;
 }
 
 export interface StructuredCopilotResponse {

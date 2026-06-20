@@ -15,7 +15,7 @@ export const INITIAL_SCHOOL: SchoolDetails = {
 
 export const INITIAL_FORECAST: SchoolForecast = {
   schoolId: "lincoln-heights",
-  date: "2026-06-25", // Upcoming Thursday
+  date: "2026-03-12", // Thursday focus day (aligned with SurplusSync Plus)
   expectedAttendance: 528,
   predictionInterval: {
     min: 497,
