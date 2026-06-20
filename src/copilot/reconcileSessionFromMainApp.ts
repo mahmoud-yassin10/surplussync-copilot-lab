@@ -9,7 +9,14 @@ import {
   PREVENTABLE_SURPLUS_CORRECTED,
 } from "./demoConstants";
 import type { ReconciliationRequest } from "./reconciliationSchemas";
-import { getSession, getSessionState, type AlertStatus, type SessionSnapshot } from "./sessionStore";
+import {
+  DEFAULT_PARTNER_PREREQUISITES,
+  getSession,
+  getSessionState,
+  type AlertStatus,
+  type PartnerPrerequisites,
+  type SessionSnapshot,
+} from "./sessionStore";
 
 export interface ReconcileResult {
   ok: boolean;
@@ -27,6 +34,7 @@ interface ReconcilableView {
   currentPreparationPlan: number;
   alertStatus: AlertStatus;
   selectedPartnerId: string;
+  partnerPrerequisites: PartnerPrerequisites;
 }
 
 function snapshotReconcilable(session: NonNullable<ReturnType<typeof getSession>>): ReconcilableView {
@@ -37,7 +45,51 @@ function snapshotReconcilable(session: NonNullable<ReturnType<typeof getSession>
     currentPreparationPlan: session.school.currentPreparationPlan,
     alertStatus: session.alertStatus,
     selectedPartnerId: session.selectedPartnerId,
+    partnerPrerequisites: { ...session.partnerPrerequisites },
   };
+}
+
+function reconcilePartnerPrerequisites(
+  current: PartnerPrerequisites,
+  payload: ReconciliationRequest
+): PartnerPrerequisites {
+  const incoming = payload.operational.partnerPrerequisites;
+  if (!incoming) {
+    const next = {
+      ...DEFAULT_PARTNER_PREREQUISITES,
+      resetVersion: current.resetVersion,
+      cancellationVersion: current.cancellationVersion,
+      revision: current.revision,
+    };
+    const changed =
+      current.surplusConfirmed !== next.surplusConfirmed ||
+      current.surplusMeals !== next.surplusMeals ||
+      current.foodSafetyChecklistComplete !== next.foodSafetyChecklistComplete ||
+      current.recoveryWindowValid !== next.recoveryWindowValid ||
+      current.proposalsPermitted !== next.proposalsPermitted;
+    return changed ? { ...next, revision: current.revision + 1 } : next;
+  }
+
+  const next: PartnerPrerequisites = {
+    surplusConfirmed: incoming.surplusConfirmed,
+    surplusMeals: incoming.surplusMeals,
+    foodSafetyChecklistComplete: incoming.foodSafetyChecklistComplete,
+    recoveryWindowValid: incoming.recoveryWindowValid,
+    proposalsPermitted: incoming.proposalsPermitted,
+    resetVersion: incoming.resetVersion,
+    cancellationVersion: incoming.cancellationVersion,
+    revision: current.revision,
+  };
+  const changed =
+    current.surplusConfirmed !== next.surplusConfirmed ||
+    current.surplusMeals !== next.surplusMeals ||
+    current.foodSafetyChecklistComplete !== next.foodSafetyChecklistComplete ||
+    current.recoveryWindowValid !== next.recoveryWindowValid ||
+    current.proposalsPermitted !== next.proposalsPermitted ||
+    current.resetVersion !== next.resetVersion ||
+    current.cancellationVersion !== next.cancellationVersion;
+
+  return changed ? { ...next, revision: current.revision + 1 } : next;
 }
 
 function desiredReconcilable(
@@ -56,6 +108,7 @@ function desiredReconcilable(
     alertStatus,
     selectedPartnerId:
       payload.operational.selectedPartnerId ?? session.selectedPartnerId,
+    partnerPrerequisites: reconcilePartnerPrerequisites(session.partnerPrerequisites, payload),
   };
 }
 
@@ -66,7 +119,15 @@ function reconcilableEqual(a: ReconcilableView, b: ReconcilableView): boolean {
     a.recommendedPreparation === b.recommendedPreparation &&
     a.currentPreparationPlan === b.currentPreparationPlan &&
     a.alertStatus === b.alertStatus &&
-    a.selectedPartnerId === b.selectedPartnerId
+    a.selectedPartnerId === b.selectedPartnerId &&
+    a.partnerPrerequisites.surplusConfirmed === b.partnerPrerequisites.surplusConfirmed &&
+    a.partnerPrerequisites.surplusMeals === b.partnerPrerequisites.surplusMeals &&
+    a.partnerPrerequisites.foodSafetyChecklistComplete ===
+      b.partnerPrerequisites.foodSafetyChecklistComplete &&
+    a.partnerPrerequisites.recoveryWindowValid === b.partnerPrerequisites.recoveryWindowValid &&
+    a.partnerPrerequisites.proposalsPermitted === b.partnerPrerequisites.proposalsPermitted &&
+    a.partnerPrerequisites.resetVersion === b.partnerPrerequisites.resetVersion &&
+    a.partnerPrerequisites.cancellationVersion === b.partnerPrerequisites.cancellationVersion
   );
 }
 
@@ -80,6 +141,7 @@ function applyReconcilable(
   session.school.currentPreparationPlan = desired.currentPreparationPlan;
   session.alertStatus = desired.alertStatus;
   session.selectedPartnerId = desired.selectedPartnerId;
+  session.partnerPrerequisites = { ...desired.partnerPrerequisites };
 
   if (desired.expectedAttendance === CORRECTED_ATTENDANCE) {
     session.forecast.estimatedPreventableSurplus = PREVENTABLE_SURPLUS_CORRECTED;

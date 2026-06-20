@@ -57,6 +57,7 @@ function snapshot(sessionId: string): SessionSnapshot | null {
     proposals: session.proposals,
     selectedPartnerId: session.selectedPartnerId,
     alertStatus: session.alertStatus,
+    partnerPrerequisites: session.partnerPrerequisites,
   };
 }
 

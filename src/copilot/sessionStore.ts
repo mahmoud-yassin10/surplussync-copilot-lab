@@ -16,12 +16,25 @@ import { FOCUS_DATE } from "./demoConstants";
 import {
   attendanceExecutionPatch,
   buildPartnerSelectionDraft,
+  PARTNER_PREREQUISITES_INCOMPLETE,
+  PARTNER_SELECTION_PROPOSAL_STALE,
   sanitizeProposals,
   validateProposalForExecution,
 } from "./proposalValidator";
 import { SanitizedProposal } from "./schemas";
 
 export type AlertStatus = "DRAFT" | "SENT_PROVISIONAL" | "NONE";
+
+export interface PartnerPrerequisites {
+  surplusConfirmed: boolean;
+  surplusMeals: number | null;
+  foodSafetyChecklistComplete: boolean;
+  recoveryWindowValid: boolean;
+  proposalsPermitted: boolean;
+  resetVersion: number;
+  cancellationVersion: number;
+  revision: number;
+}
 
 export interface SessionSnapshot {
   sessionId: string;
@@ -33,6 +46,7 @@ export interface SessionSnapshot {
   proposals: SanitizedProposal[];
   selectedPartnerId: string;
   alertStatus: AlertStatus;
+  partnerPrerequisites: PartnerPrerequisites;
 }
 
 interface LabSession extends SessionSnapshot {
@@ -40,6 +54,17 @@ interface LabSession extends SessionSnapshot {
 }
 
 const sessions = new Map<string, LabSession>();
+
+export const DEFAULT_PARTNER_PREREQUISITES: PartnerPrerequisites = {
+  surplusConfirmed: false,
+  surplusMeals: null,
+  foodSafetyChecklistComplete: false,
+  recoveryWindowValid: false,
+  proposalsPermitted: true,
+  resetVersion: 0,
+  cancellationVersion: 0,
+  revision: 0,
+};
 
 function createInitialSnapshot(role: UserRole): Omit<LabSession, "sessionId" | "createdAt"> {
   return {
@@ -51,6 +76,7 @@ function createInitialSnapshot(role: UserRole): Omit<LabSession, "sessionId" | "
     proposals: [],
     selectedPartnerId: "metro-food-bank",
     alertStatus: "NONE",
+    partnerPrerequisites: structuredClone(DEFAULT_PARTNER_PREREQUISITES),
   };
 }
 
@@ -103,6 +129,19 @@ export function addSanitizedProposals(
   return toSnapshot(session);
 }
 
+export function updatePartnerPrerequisitesForTest(
+  sessionId: string,
+  patch: Partial<PartnerPrerequisites>
+): SessionSnapshot | null {
+  const session = sessions.get(sessionId);
+  if (!session) return null;
+  session.partnerPrerequisites = {
+    ...session.partnerPrerequisites,
+    ...patch,
+  };
+  return toSnapshot(session);
+}
+
 export interface ApproveResult {
   ok: boolean;
   statusCode: number;
@@ -123,6 +162,9 @@ export function approveProposal(sessionId: string, proposalId: string): ApproveR
 
   const validation = validateProposalForExecution(proposal, toSnapshot(session), session.role);
   if (!validation.ok) {
+    if (shouldAuditFailedExecution(validation.error)) {
+      appendFailedExecutionAudit(session, proposal, validation.error ?? "Proposal execution failed");
+    }
     return { ok: false, statusCode: validation.statusCode, error: validation.error };
   }
 
@@ -317,6 +359,48 @@ function applyProposalMutation(session: LabSession, proposal: SanitizedProposal)
   }
 }
 
+function appendFailedExecutionAudit(
+  session: LabSession,
+  proposal: SanitizedProposal,
+  reason: string
+): void {
+  const alreadyRecorded = session.auditLogs.some(
+    (a) =>
+      a.proposalId === proposal.proposalId &&
+      a.executionResult === "FAILED" &&
+      a.reason === reason
+  );
+  if (alreadyRecorded) return;
+
+  const actor =
+    session.role === UserRole.CAFETERIA_MANAGER
+      ? session.school.cafeteriaManager
+      : session.role === UserRole.SCHOOL_ADMINISTRATOR
+        ? session.school.schoolAdministrator
+        : session.role;
+
+  session.auditLogs.unshift({
+    auditId: `adt-fail-${Date.now().toString().slice(-6)}`,
+    timestamp: new Date().toISOString(),
+    actor: String(actor),
+    actorType: "HUMAN",
+    action: `Failed proposal execution: ${proposal.title}`,
+    role: session.role,
+    proposalId: proposal.proposalId,
+    before: proposal.before,
+    after: null,
+    reason,
+    permissionDecision: "DENIED",
+    approvalDecision: "APPROVED_BY_USER",
+    executionResult: "FAILED",
+    reversibility: false,
+  });
+}
+
+function shouldAuditFailedExecution(error?: string): boolean {
+  return error === PARTNER_PREREQUISITES_INCOMPLETE || error === PARTNER_SELECTION_PROPOSAL_STALE;
+}
+
 function toSnapshot(session: LabSession): SessionSnapshot {
   return {
     sessionId: session.sessionId,
@@ -328,6 +412,7 @@ function toSnapshot(session: LabSession): SessionSnapshot {
     proposals: structuredClone(session.proposals),
     selectedPartnerId: session.selectedPartnerId,
     alertStatus: session.alertStatus,
+    partnerPrerequisites: structuredClone(session.partnerPrerequisites),
   };
 }
 
