@@ -14,7 +14,6 @@ import {
 } from "./types";
 import { INITIAL_SCHOOL, INITIAL_FORECAST, INITIAL_PARTNERS, INITIAL_AUDIT_LOGS, SIMILAR_HISTORICAL_DAYS } from "./data/mockData";
 import { SCENARIOS, Scenario } from "./data/scenarios";
-import { checkPermission } from "./copilot/permissionPolicy";
 import { INTEGRATION_DOCUMENTATION_MARKDOWN } from "./data/integrationContract";
 import { 
   Shield, 
@@ -49,8 +48,22 @@ interface ChatMessage {
   isError?: boolean;
 }
 
+interface ServerSessionState {
+  sessionId: string;
+  role: UserRole;
+  school: SchoolDetails;
+  forecast: SchoolForecast;
+  partners: RecoveryPartner[];
+  auditLogs: AuditEntry[];
+  proposals: AIActionProposal[];
+  selectedPartnerId: string;
+  alertStatus: "DRAFT" | "SENT_PROVISIONAL" | "NONE";
+}
+
 export default function App() {
-  // --- Active Application States ---
+  // --- Active Application States (rendered from server session snapshot) ---
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionReady, setSessionReady] = useState(false);
   const [activeRole, setActiveRole] = useState<UserRole>(UserRole.CAFETERIA_MANAGER);
   const [school, setSchool] = useState<SchoolDetails>(INITIAL_SCHOOL);
   const [forecast, setForecast] = useState<SchoolForecast>(INITIAL_FORECAST);
@@ -76,42 +89,77 @@ export default function App() {
   ]);
   const [inputText, setInputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [apiConfig, setApiConfig] = useState<{ hasGeminiApiKey: boolean; activePort: number }>({
+  const [apiConfig, setApiConfig] = useState<{ hasGeminiApiKey: boolean; activePort: number; allowForceMock?: boolean }>({
     hasGeminiApiKey: false,
-    activePort: 3000
+    activePort: 3000,
+    allowForceMock: true,
   });
   const [forceMock, setForceMock] = useState(false);
-  
-  // --- Right-Side Active Inspector Tab ---
+
   const [inspectorTab, setInspectorTab] = useState<"tool" | "structured" | "permission" | "transparency" | "proposals" | "audit" | "docs">("transparency");
-  
-  // --- Last AI Response for Inspections ---
   const [lastAIResponse, setLastAIResponse] = useState<StructuredCopilotResponse | null>(null);
-  
-  // --- Custom Audit Addition Ref (amendments) ---
   const [correctionText, setCorrectionText] = useState("");
   const [isAddingCorrection, setIsAddingCorrection] = useState(false);
-  
-  // --- Auto-scroll hook ---
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
+  const applySessionState = (state: ServerSessionState) => {
+    setActiveRole(state.role);
+    setSchool(state.school);
+    setForecast(state.forecast);
+    setPartners(state.partners);
+    setAuditLogs(state.auditLogs);
+    setProposals(state.proposals);
+    setSelectedPartnerId(state.selectedPartnerId);
+    setAlertStatus(state.alertStatus);
+  };
+
   useEffect(() => {
-    // Fetch server status on mount
+    fetch("/api/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role: UserRole.CAFETERIA_MANAGER }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.sessionId && data.state) {
+          setSessionId(data.sessionId);
+          applySessionState(data.state);
+          setSessionReady(true);
+        }
+      })
+      .catch((err) => console.error("Failed to create demo session:", err));
+
     fetch("/api/config")
       .then((res) => res.json())
       .then((data) => setApiConfig(data))
-      .catch((err) => console.log("Failed to query server config, running with standard local config: ", err));
+      .catch((err) => console.log("Failed to query server config: ", err));
   }, []);
 
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatFeed, isLoading]);
 
+  const handleRoleChange = async (role: UserRole) => {
+    if (!sessionId) return;
+    try {
+      const res = await fetch(`/api/session/${sessionId}/role`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role }),
+      });
+      const data = await res.json();
+      if (res.ok && data.state) {
+        applySessionState(data.state);
+      }
+    } catch (err) {
+      console.error("Failed to update session role:", err);
+    }
+  };
+
   // --- Send message to Copilot Endpoint ---
   const triggerCopilotQuery = async (queryText: string) => {
-    if (!queryText.trim() || isLoading) return;
+    if (!queryText.trim() || isLoading || !sessionId) return;
 
-    // Append user's chat bubble
     const userMsg: ChatMessage = {
       id: `usr-${Date.now()}`,
       sender: "USER",
@@ -127,32 +175,33 @@ export default function App() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          sessionId,
           message: queryText,
-          role: activeRole,
-          currentPlan: school.currentPreparationPlan,
-          schoolState: school,
-          forecastState: forecast,
-          partnersState: partners,
-          forceMockMode: forceMock
+          ...(apiConfig.allowForceMock && forceMock ? { forceMockMode: true } : {}),
         }),
       });
 
       const data = await response.json();
-      const payload: StructuredCopilotResponse = data.result;
+      if (!response.ok) {
+        throw new Error(data.error || "Copilot request failed");
+      }
 
-      // Handle raw tool calls permission status dynamically or inject defaults
+      const payload: StructuredCopilotResponse = data.result;
+      if (data.state) {
+        applySessionState(data.state);
+      }
+
       const responseMsg: ChatMessage = {
         id: `ai-${Date.now()}`,
         sender: "AI",
         timestamp: new Date().toISOString(),
         text: payload.answer,
-        responseObj: payload
+        responseObj: payload,
       };
       
       setChatFeed((prev) => [...prev, responseMsg]);
       setLastAIResponse(payload);
       
-      // Auto-focus relevant tab based on type
       if (payload.answerType === "REFUSAL") {
         setInspectorTab("permission");
       } else if (payload.proposedActions && payload.proposedActions.length > 0) {
@@ -161,12 +210,7 @@ export default function App() {
         setInspectorTab("transparency");
       }
 
-      // If the AI response contains a valid action proposal, append it to our local laboratory proposal state pool
-      if (payload.proposedActions && payload.proposedActions.length > 0) {
-        setProposals((prev) => [...prev, ...payload.proposedActions]);
-      }
-
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("API error:", error);
       setChatFeed((prev) => [
         ...prev,
@@ -183,193 +227,105 @@ export default function App() {
     }
   };
 
-  // --- Deterministic Human Approval execution ---
-  const handleApproveProposal = (proposal: AIActionProposal) => {
-    // 1. Verify role permission constraints before executing
-    if (!proposal.requiredApprovals.includes(activeRole)) {
-      alert(`Access Denied! Standard regulatory procedures require authorization from a [${proposal.requiredApprovals.join(" or ")}] to approve this action. Your current active role is [${activeRole}]. Please switch roles to proceed.`);
-      return;
-    }
+  const handleApproveProposal = async (proposal: AIActionProposal) => {
+    if (!sessionId) return;
 
-    // 2. Perform deterministic local state updates based on verified proposal requirements
-    const oldSchool = { ...school };
-    const oldSelectedPartner = selectedPartnerId;
-    const oldAlertStatus = alertStatus;
-
-    if (proposal.actionType === "ATTENDANCE_UPDATE") {
-      const targetAtt = proposal.after.expectedAttendance || 540;
-      setForecast((prev) => ({
-        ...prev,
-        expectedAttendance: targetAtt,
-        estimatedPreventableSurplus: Math.max(0, school.currentPreparationPlan - prev.recommendedPreparation)
-      }));
-      // Recalculate deterministic stats
-      const predictedMin = Math.round(targetAtt - 31);
-      const predictedMax = Math.round(targetAtt + 29);
-      setForecast((prev) => ({
-        ...prev,
-        predictionInterval: { min: predictedMin, max: predictedMax, intervalType: "80% prediction interval" }
-      }));
-    } 
-    else if (proposal.actionType === "PREPARATION_OVERRIDE") {
-      const targetPrep = proposal.after.proposedQuantity || 562;
-      setSchool((prev) => ({
-        ...prev,
-        currentPreparationPlan: targetPrep
-      }));
-    }
-    else if (proposal.actionType === "SURPLUS_ALERT") {
-      setAlertStatus("SENT_PROVISIONAL");
-    }
-    else if (proposal.actionType === "PARTNER_SELECTION") {
-      const targetPartner = proposal.after.selectedPartnerId || "harbor-shelter";
-      setSelectedPartnerId(targetPartner);
-    }
-    else if (proposal.actionType === "ALERT_CANCELLATION") {
-      setAlertStatus("NONE");
-    }
-
-    // Update proposal state
-    setProposals((prev) => 
-      prev.map((p) => p.proposalId === proposal.proposalId ? { ...p, status: "EXECUTED" as any } : p)
-    );
-
-    // 3. Create legally immutable audit trail record
-    const auditId = `adt-${Date.now().toString().slice(-4)}`;
-    const newAudit: AuditEntry = {
-      auditId,
-      timestamp: new Date().toISOString(),
-      actor: activeRole === UserRole.CAFETERIA_MANAGER ? school.cafeteriaManager : school.schoolAdministrator,
-      actorType: "HUMAN",
-      action: proposal.title,
-      role: activeRole,
-      proposalId: proposal.proposalId,
-      before: proposal.before,
-      after: proposal.after,
-      reason: proposal.reason,
-      permissionDecision: "GRANTED",
-      approvalDecision: "APPROVED_BY_USER",
-      executionResult: "SUCCESS",
-      reversibility: proposal.reversible,
-      undoStatus: "NOT_APPLICABLE"
-    };
-
-    setAuditLogs((prev) => [newAudit, ...prev]);
-
-    // Append system status confirmation in chat
-    const confirmText = `ACTION EXECUTED: Proposal "${proposal.title}" has been verified, authorized by ${activeRole}, and executed successfully. System state updated in-memory. Immutable audit log registered as '${auditId}'.`;
-    setChatFeed((prev) => [
-      ...prev,
-      {
-        id: `sys-${Date.now()}`,
-        sender: "AI",
-        timestamp: new Date().toISOString(),
-        text: confirmText
+    try {
+      const res = await fetch(`/api/session/${sessionId}/proposals/${proposal.proposalId}/approve`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || "Approval denied by server policy.");
+        return;
       }
-    ]);
+
+      applySessionState(data.state);
+
+      const confirmText = `ACTION EXECUTED: Proposal "${proposal.title}" has been verified, authorized by ${data.state.role}, and executed successfully. System state updated on server. Immutable audit log registered.`;
+      setChatFeed((prev) => [
+        ...prev,
+        {
+          id: `sys-${Date.now()}`,
+          sender: "AI",
+          timestamp: new Date().toISOString(),
+          text: confirmText
+        }
+      ]);
+    } catch (error) {
+      console.error("Approval error:", error);
+      alert("Failed to reach approval endpoint.");
+    }
   };
 
-  const handleRejectProposal = (proposal: AIActionProposal) => {
-    // Update state to rejected
-    setProposals((prev) => 
-      prev.map((p) => p.proposalId === proposal.proposalId ? { ...p, status: "REJECTED" as any } : p)
-    );
+  const handleRejectProposal = async (proposal: AIActionProposal) => {
+    if (!sessionId) return;
 
-    // Log the human rejection
-    const newAudit: AuditEntry = {
-      auditId: `adt-rej-${Date.now().toString().slice(-4)}`,
-      timestamp: new Date().toISOString(),
-      actor: activeRole === UserRole.CAFETERIA_MANAGER ? school.cafeteriaManager : school.schoolAdministrator,
-      actorType: "HUMAN",
-      action: `Rejected proposal: ${proposal.title}`,
-      role: activeRole,
-      proposalId: proposal.proposalId,
-      before: proposal.before,
-      after: null,
-      reason: "User cancelled proposal in approval gate workspace.",
-      permissionDecision: "GRANTED",
-      approvalDecision: "REJECTED_BY_USER",
-      executionResult: "CANCELLED",
-      reversibility: false,
-    };
-
-    setAuditLogs((prev) => [newAudit, ...prev]);
+    try {
+      const res = await fetch(`/api/session/${sessionId}/proposals/${proposal.proposalId}/reject`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || "Rejection failed.");
+        return;
+      }
+      applySessionState(data.state);
+    } catch (error) {
+      console.error("Rejection error:", error);
+      alert("Failed to reach rejection endpoint.");
+    }
   };
 
-  // --- Real Reversible State Undo ---
-  const handleUndoAudit = (audit: AuditEntry) => {
-    // Find the original before parameters
-    if (!audit.before || !audit.proposalId) return;
+  const handlePartnerSelectionRequest = async (partnerId: string) => {
+    if (!sessionId || partnerId === selectedPartnerId) return;
 
-    // Check which proposal it maps to and revert corresponding states deterministically
-    const targetProposal = proposals.find((p) => p.proposalId === audit.proposalId);
-    if (!targetProposal) return;
-
-    if (targetProposal.actionType === "ATTENDANCE_UPDATE") {
-      const prevAtt = audit.before.expectedAttendance || 468;
-      setForecast((prev) => ({
-        ...prev,
-        expectedAttendance: prevAtt
-      }));
-    }
-    else if (targetProposal.actionType === "PREPARATION_OVERRIDE") {
-      const prevPrep = audit.before.currentPreparationPlan || 730;
-      setSchool((prev) => ({ ...prev, currentPreparationPlan: prevPrep }));
-    }
-    else if (targetProposal.actionType === "SURPLUS_ALERT") {
-      setAlertStatus("NONE");
-    }
-    else if (targetProposal.actionType === "PARTNER_SELECTION") {
-      const prevPartner = audit.before.selectedPartnerId || "metro-food-bank";
-      setSelectedPartnerId(prevPartner);
-    }
-
-    // Set audit status to reversed
-    setAuditLogs((prev) => 
-      prev.map((a) => a.auditId === audit.auditId ? { ...a, undoStatus: "REVERSED" as const } : a)
-    );
-
-    // Also update proposal state
-    setProposals((prev) => 
-      prev.map((p) => p.proposalId === audit.proposalId ? { ...p, status: "UNDONE" as any } : p)
-    );
-
-    const undoMsg = `UNDO TRIGGERED: Action "${audit.action}" has been completely reverted. Previous state values restored. Reversal registered under audit ID '${audit.auditId}'.`;
-    setChatFeed((prev) => [
-      ...prev,
-      {
-        id: `sys-undo-${Date.now()}`,
-        sender: "AI",
-        timestamp: new Date().toISOString(),
-        text: undoMsg
+    try {
+      const res = await fetch(`/api/session/${sessionId}/proposals/partner-selection`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ partnerId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || "Partner selection requires an approved proposal.");
+        return;
       }
-    ]);
+      applySessionState(data.state);
+      setInspectorTab("proposals");
+    } catch (error) {
+      console.error("Partner selection error:", error);
+      alert("Failed to create partner selection proposal.");
+    }
+  };
+
+  const handleUndoAudit = (_audit: AuditEntry) => {
+    alert("State reversal is not available in P0. Undo will be routed through the server in a later phase.");
   };
 
   // --- Add explanatory correction (Amendment) to immutable logs ---
-  const handleAddAuditCorrection = (e: React.FormEvent) => {
+  const handleAddAuditCorrection = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!correctionText.trim()) return;
+    if (!correctionText.trim() || !sessionId) return;
 
-    const newAudit: AuditEntry = {
-      auditId: `adt-cor-${Date.now().toString().slice(-4)}`,
-      timestamp: new Date().toISOString(),
-      actor: activeRole === UserRole.CAFETERIA_MANAGER ? school.cafeteriaManager : school.schoolAdministrator,
-      actorType: "HUMAN",
-      action: "REGISTER AMENDMENT CORRECTION",
-      role: activeRole,
-      before: null,
-      after: null,
-      reason: correctionText,
-      permissionDecision: "GRANTED",
-      approvalDecision: "BYPASSED",
-      executionResult: "SUCCESS",
-      reversibility: false,
-    };
-
-    setAuditLogs((prev) => [newAudit, ...prev]);
-    setCorrectionText("");
-    setIsAddingCorrection(false);
+    try {
+      const res = await fetch(`/api/session/${sessionId}/audit/amendment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: correctionText }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || "Failed to register audit amendment.");
+        return;
+      }
+      applySessionState(data.state);
+      setCorrectionText("");
+      setIsAddingCorrection(false);
+    } catch (error) {
+      console.error("Audit amendment error:", error);
+      alert("Failed to reach audit amendment endpoint.");
+    }
   };
 
   const runScenarioDirectly = (scenario: Scenario) => {
@@ -379,6 +335,7 @@ export default function App() {
   const formatValue = (obj: any) => {
     if (!obj) return "None";
     if (obj.expectedAttendance !== undefined) return `${obj.expectedAttendance} Students`;
+    if (obj.recommendedPreparation !== undefined) return `${obj.recommendedPreparation} Meals (recommended)`;
     if (obj.proposedQuantity !== undefined) return `${obj.proposedQuantity} Meals`;
     if (obj.currentPreparationPlan !== undefined) return `${obj.currentPreparationPlan} Meals`;
     if (obj.selectedPartnerId !== undefined) {
@@ -423,7 +380,7 @@ export default function App() {
           <div className="flex items-center bg-[#11162d] rounded-lg p-1 border border-[#1b254a] text-xs shadow-sm">
             <button
               onClick={() => setForceMock(false)}
-              disabled={!apiConfig.hasGeminiApiKey}
+              disabled={!apiConfig.hasGeminiApiKey || !apiConfig.allowForceMock}
               className={`px-3 py-1.5 rounded-md transition-all duration-200 cursor-pointer ${
                 !forceMock && apiConfig.hasGeminiApiKey
                   ? "bg-violet-600 text-white font-bold shadow-md shadow-violet-900/30"
@@ -455,7 +412,7 @@ export default function App() {
           {Object.values(UserRole).map((role) => (
             <button
               key={role}
-              onClick={() => setActiveRole(role)}
+              onClick={() => handleRoleChange(role)}
               className={`px-3.5 py-1.5 rounded-md border text-xs cursor-pointer font-bold tracking-wide transition-all ${
                 activeRole === role
                   ? "bg-amber-500/10 border-amber-500/80 text-amber-300 shadow-md shadow-amber-950/25"
@@ -980,7 +937,9 @@ export default function App() {
                           <div className="font-bold text-white mb-1 uppercase tracking-wide text-xs">{prop.title}</div>
                           <p className="text-[#cbd5e1] text-[11px] mt-1 leading-relaxed">{prop.summary}</p>
                           
-                          {prop.status === "PENDING_APPROVAL" && (
+                          {prop.status === "PENDING_APPROVAL" && (() => {
+                            const isUserAuthorized = prop.requiredApprovals.includes(activeRole);
+                            return (
                             <div className="mt-3 p-3 bg-black/40 rounded-lg border border-[#1b254a]/40 space-y-1.5">
                               <div className="text-[10px] text-slate-400 font-semibold">
                                 Required Safe Credentials: <span className="text-amber-300 font-extrabold">{prop.requiredApprovals.join(", ")}</span>
@@ -988,7 +947,12 @@ export default function App() {
                               <div className="flex gap-2 pt-1">
                                 <button
                                   onClick={() => handleApproveProposal(prop)}
-                                  className="bg-emerald-600 font-extrabold px-3 py-1.5 rounded-lg text-white flex-1 hover:bg-emerald-500 cursor-pointer text-xs"
+                                  disabled={!isUserAuthorized}
+                                  className={`font-extrabold px-3 py-1.5 rounded-lg flex-1 text-xs ${
+                                    isUserAuthorized
+                                      ? "bg-emerald-600 text-white hover:bg-emerald-500 cursor-pointer"
+                                      : "bg-emerald-950/20 text-emerald-500/30 border border-emerald-950/45 cursor-not-allowed"
+                                  }`}
                                 >
                                   Sign & Execute
                                 </button>
@@ -1000,7 +964,8 @@ export default function App() {
                                 </button>
                               </div>
                             </div>
-                          )}
+                            );
+                          })()}
                         </div>
                       ))}
                     </div>
@@ -1240,28 +1205,7 @@ export default function App() {
                   return (
                     <div 
                       key={partner.id} 
-                      onClick={() => {
-                        setSelectedPartnerId(partner.id);
-                        // Push log to state
-                        const auditId = `adt-sel-${Date.now().toString().slice(-4)}`;
-                        const newAudit: AuditEntry = {
-                          auditId,
-                          timestamp: new Date().toISOString(),
-                          actor: activeRole === UserRole.CAFETERIA_MANAGER ? school.cafeteriaManager : school.schoolAdministrator,
-                          actorType: "HUMAN",
-                          action: `Selected route partner: ${partner.name}`,
-                          role: activeRole,
-                          before: { selectedPartnerId },
-                          after: { selectedPartnerId: partner.id },
-                          reason: "Interactive route selector override in laboratory matrix UI.",
-                          permissionDecision: "GRANTED",
-                          approvalDecision: "APPROVED_BY_USER",
-                          executionResult: "SUCCESS",
-                          reversibility: true,
-                          undoStatus: "NOT_APPLICABLE"
-                        };
-                        setAuditLogs((prev) => [newAudit, ...prev]);
-                      }}
+                      onClick={() => handlePartnerSelectionRequest(partner.id)}
                       className={`p-3 rounded-xl border text-xs cursor-pointer transition flex justify-between items-center ${
                         isRouteSelected 
                           ? "bg-blue-950/30 border-blue-500/70 shadow-md" 
