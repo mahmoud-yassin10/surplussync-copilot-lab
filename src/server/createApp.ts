@@ -1,8 +1,8 @@
 import express, { Express, Request, Response } from "express";
-import { GoogleGenAI, Type } from "@google/genai";
-import { executeMockCopilot } from "../copilot/mockGeminiClient";
-import { SYSTEM_PROMPT } from "../copilot/systemPrompt";
-import { processCopilotResponse } from "../copilot/copilotResponseProcessor";
+import { GoogleGenAI } from "@google/genai";
+import { FunctionCall } from "@google/genai";
+import { runCopilotTurn } from "../copilot/geminiRunner";
+import { ForecastProvider } from "../copilot/forecastProvider";
 import {
   AuditAmendmentRequestSchema,
   CopilotRequestSchema,
@@ -18,104 +18,38 @@ import {
   getSessionState,
   rejectProposal,
   updateSessionRole,
-  SessionSnapshot,
 } from "../copilot/sessionStore";
 import { UserRole } from "../types";
-
-const responseSchema = {
-  type: Type.OBJECT,
-  properties: {
-    answer: { type: Type.STRING },
-    answerType: { type: Type.STRING },
-    evidence: {
-      type: Type.ARRAY,
-      items: {
-        type: Type.OBJECT,
-        properties: {
-          label: { type: Type.STRING },
-          value: { type: Type.STRING },
-          sourceType: { type: Type.STRING },
-        },
-        required: ["label", "value", "sourceType"],
-      },
-    },
-    provenance: {
-      type: Type.ARRAY,
-      items: {
-        type: Type.OBJECT,
-        properties: {
-          source: { type: Type.STRING },
-          status: { type: Type.STRING },
-        },
-        required: ["source", "status"],
-      },
-    },
-    uncertainty: {
-      type: Type.OBJECT,
-      properties: {
-        level: { type: Type.STRING },
-        explanation: { type: Type.STRING },
-      },
-      required: ["level", "explanation"],
-    },
-    limitations: { type: Type.ARRAY, items: { type: Type.STRING } },
-    toolCalls: {
-      type: Type.ARRAY,
-      items: {
-        type: Type.OBJECT,
-        properties: {
-          toolName: { type: Type.STRING },
-          arguments: { type: Type.OBJECT, properties: {} },
-        },
-        required: ["toolName", "arguments"],
-      },
-    },
-    proposedActions: {
-      type: Type.ARRAY,
-      items: {
-        type: Type.OBJECT,
-        properties: {
-          actionType: { type: Type.STRING },
-          title: { type: Type.STRING },
-          summary: { type: Type.STRING },
-          reason: { type: Type.STRING },
-          after: { type: Type.OBJECT, properties: {} },
-          before: { type: Type.OBJECT, properties: {} },
-          risks: { type: Type.ARRAY, items: { type: Type.STRING } },
-          reversible: { type: Type.BOOLEAN },
-        },
-        required: ["actionType", "title", "summary", "reason", "after"],
-      },
-    },
-    requiresHumanApproval: { type: Type.BOOLEAN },
-  },
-  required: [
-    "answer",
-    "answerType",
-    "evidence",
-    "provenance",
-    "uncertainty",
-    "limitations",
-    "toolCalls",
-    "proposedActions",
-    "requiresHumanApproval",
-  ],
-};
+import type { MlFetchFn } from "../copilot/forecastProvider";
 
 export interface LabAppOptions {
   isProduction?: boolean;
-  /** Treat Gemini as available for mode resolution (used in tests). */
   geminiAvailable?: boolean;
-  /** Bypass Gemini/mock routing and return this payload (tests only). */
-  testCopilotExecutor?: (message: string, session: SessionSnapshot) => unknown;
   geminiApiKey?: string;
   port?: number;
+  forecastProvider?: ForecastProvider;
+  mlFetchFn?: MlFetchFn;
+  testGeminiSteps?: Array<{ functionCalls?: FunctionCall[]; text?: string }>;
 }
 
 function resolveGeminiClient(options: LabAppOptions): GoogleGenAI | null {
   if (options.geminiAvailable === false) return null;
   if (options.geminiAvailable === true) {
-    return { models: { generateContent: async () => ({ text: "{}" }) } } as unknown as GoogleGenAI;
+    return {
+      models: {
+        generateContent: async () => ({
+          text: JSON.stringify({
+            answer: "Controlled tool-loop explanation.",
+            answerType: "FACT",
+            evidence: [],
+            provenance: [{ source: "Test Gemini", status: "DERIVED" }],
+            uncertainty: { level: "LOW", explanation: "Test mode." },
+            limitations: [],
+          }),
+          functionCalls: [],
+        }),
+      },
+    } as unknown as GoogleGenAI;
   }
   const API_KEY = options.geminiApiKey ?? process.env.GEMINI_API_KEY;
   if (!API_KEY || API_KEY === "MY_GEMINI_API_KEY" || API_KEY.trim() === "") {
@@ -138,6 +72,11 @@ export function createLabApp(options: LabAppOptions = {}): Express {
   const isProduction = options.isProduction ?? process.env.NODE_ENV === "production";
   const PORT = options.port ?? 3000;
   const ai = resolveGeminiClient(options);
+  const forecastProvider =
+    options.forecastProvider ??
+    new ForecastProvider({
+      fetchFn: options.mlFetchFn,
+    });
 
   app.post("/api/session", (req: Request, res: Response) => {
     const parsed = CreateSessionRequestSchema.safeParse(req.body ?? {});
@@ -246,77 +185,53 @@ export function createLabApp(options: LabAppOptions = {}): Express {
       const forceMockMode = !isProduction && forceMockRequested;
       const useMock = forceMockMode || !ai;
 
-      let rawResult: unknown;
+      const turn = await runCopilotTurn({
+        sessionId,
+        message,
+        mode: useMock ? "mock" : "live",
+        ai,
+        forecastProvider,
+        testGeminiSteps: options.testGeminiSteps,
+      });
 
-      if (options.testCopilotExecutor && !useMock) {
-        rawResult = options.testCopilotExecutor(message, session);
-      } else if (useMock) {
-        rawResult = executeMockCopilot(message, session.role, session.school.currentPreparationPlan);
-      } else {
-        const contextualPrompt = `
-CURRENT OPERATIONAL STATE FOR RESOLUTION (authoritative server snapshot):
-- Active School Details: ${JSON.stringify(session.school)}
-- Active Forecast: ${JSON.stringify(session.forecast)}
-- Active Partners: ${JSON.stringify(session.partners)}
-- Active User Role: ${session.role}
-- Current Active Preparation Target: ${session.school.currentPreparationPlan} meals
-- Selected Partner: ${session.selectedPartnerId}
-- Alert Status: ${session.alertStatus}
-
-USER MESSAGE TO RESOLVE:
-"${message}"
-`;
-
-        const response = await ai!.models.generateContent({
-          model: "gemini-3.5-flash",
-          contents: contextualPrompt,
-          config: {
-            systemInstruction: SYSTEM_PROMPT,
-            responseMimeType: "application/json",
-            responseSchema: responseSchema,
-            temperature: 0.1,
-          },
-        });
-
-        rawResult = JSON.parse(response.text || "{}");
-      }
-
-      const processed = processCopilotResponse(rawResult, sessionId, session.role);
-      if ("error" in processed) {
-        res.status(422).json({ error: processed.error });
+      if (!turn.ok || !turn.processed || "error" in turn.processed) {
+        res.status(422).json({ error: turn.error ?? turn.processed?.error ?? "Copilot turn failed" });
         return;
       }
 
+      const apiMode = useMock ? "MOCK_FALLBACK" : "GEMINI_LIVE";
       res.json({
-        result: processed.response,
+        result: turn.processed.response,
         state: getSessionState(sessionId),
-        mode: useMock ? "MOCK_FALLBACK" : "GEMINI_LIVE",
-        rejectedProposals: processed.rejectedProposals,
+        mode: apiMode,
+        runnerMode: turn.mode,
+        rejectedProposals: turn.processed.rejectedProposals,
+        warning: turn.warning,
       });
     } catch (error: unknown) {
-      console.error("Gemini Copilot execution failed:", error);
+      console.error("Copilot execution failed:", error);
       const sessionId = req.body?.sessionId;
-      const session = typeof sessionId === "string" ? getSessionState(sessionId) : null;
-      if (!session) {
+      if (typeof sessionId !== "string" || !getSessionState(sessionId)) {
         res.status(500).json({ error: "Copilot failed and session is unavailable for fallback" });
         return;
       }
-      const rawFallback = executeMockCopilot(
-        req.body.message ?? "",
-        session.role,
-        session.school.currentPreparationPlan
-      );
-      const processed = processCopilotResponse(rawFallback, sessionId, session.role);
-      if ("error" in processed) {
-        res.status(500).json({ error: processed.error });
+      const fallback = await runCopilotTurn({
+        sessionId,
+        message: req.body.message ?? "",
+        mode: "mock",
+        forecastProvider,
+      });
+      if (!fallback.ok || !fallback.processed || "error" in fallback.processed) {
+        res.status(500).json({ error: fallback.error ?? "Copilot fallback failed" });
         return;
       }
       res.json({
-        result: processed.response,
+        result: fallback.processed.response,
         state: getSessionState(sessionId),
         mode: "MOCK_FALLBACK",
-        warning: "Server connection or API call encountered an error. Safely resolved via local laboratory fallback.",
-        rejectedProposals: processed.rejectedProposals,
+        runnerMode: fallback.mode,
+        warning: "Server error encountered. Safely resolved via deterministic tool-loop fallback.",
+        rejectedProposals: fallback.processed.rejectedProposals,
       });
     }
   });
