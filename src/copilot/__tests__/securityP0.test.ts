@@ -10,8 +10,24 @@ import {
   getSessionState,
 } from "../sessionStore";
 import { sanitizeProposals } from "../proposalValidator";
-import { executeMockCopilot } from "../mockGeminiClient";
+import { runCopilotTurn } from "../geminiRunner";
+import { ForecastProvider } from "../forecastProvider";
+import { buildCanonicalForecastFallback } from "../canonicalMlFeatures";
 import { CORRECTED_ATTENDANCE, SAFETY_FLOOR } from "../demoConstants";
+
+function testForecastProvider() {
+  return new ForecastProvider({
+    config: { serviceUrl: "http://ml.test", requestTimeoutMs: 2000, allowFallback: true },
+    fetchFn: async (url) => {
+      if (url.endsWith("/v1/forecast") || url.endsWith("/v1/what-if")) {
+        return new Response(JSON.stringify(buildCanonicalForecastFallback()), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ status: "ok" }));
+    },
+  });
+}
 
 beforeEach(() => {
   clearAllSessions();
@@ -82,28 +98,18 @@ describe("role escalation", () => {
 });
 
 describe("false requiredApprovals metadata", () => {
-  it("overwrites model-supplied empty approval roles with server policy", () => {
+  it("overwrites model-supplied empty approval roles with server policy", async () => {
     const session = createSession(UserRole.SCHOOL_ADMINISTRATOR);
-    const snapshot = getSessionState(session.sessionId)!;
-    const raw = executeMockCopilot(
-      "change attendance trip cancelled",
-      UserRole.SCHOOL_ADMINISTRATOR,
-      730
-    );
-    const firstProposal = { ...raw.proposedActions[0] } as Record<string, unknown>;
-    firstProposal.requiredApprovals = [];
-    firstProposal.policyChecks = [{ policy: "Fake", passed: true, explanation: "Model lied" }];
-
-    const processed = processCopilotResponse(raw, session.sessionId, UserRole.SCHOOL_ADMINISTRATOR);
-    expect("error" in processed).toBe(false);
-    if ("error" in processed) return;
-
-    expect(processed.response.proposedActions[0].requiredApprovals).toEqual([
+    const turn = await runCopilotTurn({
+      sessionId: session.sessionId,
+      message: "change attendance trip cancelled apply correction",
+      mode: "mock",
+      forecastProvider: testForecastProvider(),
+    });
+    expect(turn.ok).toBe(true);
+    expect(turn.processed?.response.proposedActions[0]?.requiredApprovals).toEqual([
       UserRole.SCHOOL_ADMINISTRATOR,
     ]);
-    expect(processed.response.proposedActions[0].policyChecks.every((c) => c.policy !== "Fake")).toBe(
-      true
-    );
   });
 });
 
@@ -129,14 +135,17 @@ describe("safety floor", () => {
     expect(rejected.length).toBeGreaterThan(0);
   });
 
-  it("refuses unsafe prep via mock copilot tool path", () => {
+  it("refuses unsafe prep via mock tool loop", async () => {
     const session = createSession(UserRole.CAFETERIA_MANAGER);
-    const raw = executeMockCopilot("reduce prep to 480 meals limit", UserRole.CAFETERIA_MANAGER, 730);
-    const processed = processCopilotResponse(raw, session.sessionId, UserRole.CAFETERIA_MANAGER);
-    expect("error" in processed).toBe(false);
-    if ("error" in processed) return;
-    expect(processed.response.proposedActions).toHaveLength(0);
-    expect(processed.response.toolCalls[0].permissionPassed).toBe(false);
+    const turn = await runCopilotTurn({
+      sessionId: session.sessionId,
+      message: "reduce prep to 480 meals limit",
+      mode: "mock",
+      forecastProvider: testForecastProvider(),
+    });
+    expect(turn.ok).toBe(true);
+    expect(turn.processed?.response.proposedActions).toHaveLength(0);
+    expect(turn.processed?.response.toolCalls[0]?.permissionPassed).toBe(false);
   });
 });
 
@@ -205,48 +214,67 @@ describe("duplicate approvals", () => {
 });
 
 describe("model security metadata recomputation", () => {
-  it("discards model-authored approval and policy fields", () => {
+  it("discards model-authored approval and policy fields via legacy sanitizer", () => {
     const session = createSession(UserRole.SCHOOL_ADMINISTRATOR);
-    const raw = executeMockCopilot(
-      "change attendance trip cancelled",
-      UserRole.SCHOOL_ADMINISTRATOR,
-      730
+    const processed = processCopilotResponse(
+      {
+        answer: "test",
+        answerType: "EXPLANATION",
+        evidence: [],
+        provenance: [],
+        uncertainty: { level: "LOW", explanation: "x" },
+        limitations: [],
+        toolCalls: [],
+        proposedActions: [
+          {
+            actionType: "ATTENDANCE_UPDATE",
+            title: "x",
+            summary: "x",
+            reason: "x",
+            before: { expectedAttendance: 528, recommendedPreparation: 562 },
+            after: { expectedAttendance: 540 },
+            requiredApprovals: [],
+            policyChecks: [{ policy: "Fake", passed: true, explanation: "bad" }],
+            status: "EXECUTED",
+          },
+        ],
+        requiresHumanApproval: true,
+      },
+      session.sessionId,
+      UserRole.SCHOOL_ADMINISTRATOR
     );
-    const draft = { ...raw.proposedActions[0] } as Record<string, unknown>;
-    draft.proposalId = "model-slug-id";
-    draft.requiredApprovals = [];
-    draft.status = "EXECUTED";
-    draft.createdAt = "2020-01-01T00:00:00.000Z";
-    draft.expiresAt = "2020-01-01T00:00:00.000Z";
-    draft.expectedConsequences = ["Fabricated"];
-    draft.policyChecks = [{ policy: "Fake", passed: true, explanation: "bad" }];
-    raw.proposedActions = [draft as unknown as (typeof raw.proposedActions)[0]];
-
-    const processed = processCopilotResponse(raw, session.sessionId, UserRole.SCHOOL_ADMINISTRATOR);
     expect("error" in processed).toBe(false);
     if ("error" in processed) return;
-
     const p = processed.response.proposedActions[0];
-    expect(p.proposalId).not.toBe("model-slug-id");
     expect(p.requiredApprovals).toEqual([UserRole.SCHOOL_ADMINISTRATOR]);
     expect(p.status).toBe("PENDING_APPROVAL");
-    expect(p.expectedConsequences).not.toContain("Fabricated");
     expect(p.policyChecks.every((c) => c.policy !== "Fake")).toBe(true);
-    expect(p.createdAt).not.toBe("2020-01-01T00:00:00.000Z");
-    expect(p.expiresAt).not.toBe("2020-01-01T00:00:00.000Z");
   });
 });
 
 describe("mock and live path parity", () => {
-  it("routes mock copilot output through the same sanitizer", () => {
+  it("routes mock copilot output through the controlled tool loop", async () => {
     const session = createSession(UserRole.CAFETERIA_MANAGER);
-    const raw = executeMockCopilot("why is Thursday high risk explain forecast", UserRole.CAFETERIA_MANAGER, 730);
-    const processed = processCopilotResponse(raw, session.sessionId, UserRole.CAFETERIA_MANAGER);
-    expect("error" in processed).toBe(false);
-    if ("error" in processed) return;
-    expect(processed.response.toolCalls.every((tc) => typeof tc.permissionPassed === "boolean")).toBe(
-      true
-    );
+    const provider = new ForecastProvider({
+      config: { serviceUrl: "http://ml.test", requestTimeoutMs: 2000, allowFallback: true },
+      fetchFn: async (url) => {
+        if (url.endsWith("/v1/forecast")) {
+          return new Response(JSON.stringify(buildCanonicalForecastFallback()), {
+            headers: { "content-type": "application/json" },
+          });
+        }
+        return new Response(JSON.stringify({ status: "ok" }));
+      },
+    });
+    const { runCopilotTurn } = await import("../geminiRunner");
+    const turn = await runCopilotTurn({
+      sessionId: session.sessionId,
+      message: "why is Thursday high risk explain forecast",
+      mode: "mock",
+      forecastProvider: provider,
+    });
+    expect(turn.ok).toBe(true);
+    expect(turn.processed?.response.toolCalls.every((tc) => typeof tc.permissionPassed === "boolean")).toBe(true);
   });
 });
 

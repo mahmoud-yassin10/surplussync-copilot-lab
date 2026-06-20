@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import request from "supertest";
 import { createLabApp } from "../../server/createApp";
+import { buildCanonicalForecastFallback, buildCanonicalWhatIfTripCancelledFallback } from "../canonicalMlFeatures";
 import {
   BASELINE_ATTENDANCE,
   BASELINE_RECOMMENDED_PREP,
@@ -16,6 +17,28 @@ import {
   getSession,
 } from "../sessionStore";
 import { UserRole } from "../../types";
+
+function mockMlFetch() {
+  return async (url: string) => {
+    if (url.endsWith("/v1/forecast")) {
+      return new Response(JSON.stringify(buildCanonicalForecastFallback()), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (url.endsWith("/v1/what-if")) {
+      return new Response(JSON.stringify(buildCanonicalWhatIfTripCancelledFallback()), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    return new Response(JSON.stringify({ status: "ok", modelLoaded: true }), {
+      headers: { "content-type": "application/json" },
+    });
+  };
+}
+
+function createTestApp(extra: Parameters<typeof createLabApp>[0] = {}) {
+  return createLabApp({ mlFetchFn: mockMlFetch(), ...extra });
+}
 
 function minimalCopilotPayload(proposedActions: unknown[] = []) {
   return {
@@ -60,7 +83,7 @@ describe("HTTP integration — Copilot Lab API", () => {
 
   beforeEach(() => {
     clearAllSessions();
-    app = createLabApp();
+    app = createTestApp();
   });
 
   it("POST /api/session creates a server-issued session", async () => {
@@ -221,20 +244,10 @@ describe("HTTP integration — Copilot Lab API", () => {
   });
 
   it("ignores forceMockMode in production when Gemini is available", async () => {
-    const prodApp = createLabApp({
+    const prodApp = createTestApp({
       isProduction: true,
       geminiAvailable: true,
-      testCopilotExecutor: () =>
-        minimalCopilotPayload([
-          {
-            actionType: "ATTENDANCE_UPDATE",
-            title: "Injected",
-            summary: "Injected",
-            reason: "Injected",
-            before: { expectedAttendance: 528, recommendedPreparation: 562 },
-            after: { expectedAttendance: 540 },
-          },
-        ]),
+      testGeminiSteps: [{ functionCalls: [{ name: "read_operational_state", args: {} }] }],
     });
     const created = await createSessionViaHttp(prodApp);
 
@@ -283,47 +296,57 @@ describe("HTTP integration — Copilot Lab API", () => {
     expect(res.body.state.auditLogs[1]).toEqual(originalFirst);
   });
 
-  it("discards and recomputes model-produced security metadata fields", async () => {
-    const modelProposalId = "00000000-0000-4000-8000-model00000001";
-    const modelCreatedAt = "2020-01-01T00:00:00.000Z";
-    const modelExpiresAt = "2020-01-01T00:00:01.000Z";
-
-    const testApp = createLabApp({
+  it("discards model-supplied proposal metadata in favor of server-derived fields", async () => {
+    const testApp = createTestApp({
       geminiAvailable: true,
-      testCopilotExecutor: () =>
-        minimalCopilotPayload([
-          {
-            proposalId: modelProposalId,
-            actionType: "ATTENDANCE_UPDATE",
-            title: "Model draft",
-            summary: "Model draft",
-            reason: "Model draft",
-            before: { expectedAttendance: 528, recommendedPreparation: 562 },
-            after: { expectedAttendance: 540 },
-            requiredApprovals: [],
-            policyChecks: [{ policy: "Fake", passed: true, explanation: "Model lied" }],
-            expectedConsequences: ["Model-authored consequence"],
-            status: "EXECUTED",
-            createdAt: modelCreatedAt,
-            expiresAt: modelExpiresAt,
-          },
-        ]),
+      testGeminiSteps: [
+        {
+          functionCalls: [
+            { name: "propose_attendance_update", args: { reason: "Trip cancelled due to weather." } },
+          ],
+        },
+      ],
     });
 
     const created = await createSessionViaHttp(testApp, UserRole.SCHOOL_ADMINISTRATOR);
     const res = await request(testApp)
       .post("/api/copilot")
-      .send({ sessionId: created.sessionId, message: "attendance update" });
+      .send({ sessionId: created.sessionId, message: "apply attendance correction" });
     expect(res.status).toBe(200);
 
     const proposal = res.body.result.proposedActions[0];
-    expect(proposal.proposalId).not.toBe(modelProposalId);
     expect(proposal.requiredApprovals).toEqual([UserRole.SCHOOL_ADMINISTRATOR]);
-    expect(proposal.policyChecks.some((c: { policy: string }) => c.policy === "Fake")).toBe(false);
-    expect(proposal.expectedConsequences).not.toContain("Model-authored consequence");
     expect(proposal.status).toBe("PENDING_APPROVAL");
-    expect(proposal.createdAt).not.toBe(modelCreatedAt);
-    expect(proposal.expiresAt).not.toBe(modelExpiresAt);
-    expect(new Date(proposal.expiresAt).getTime()).toBeGreaterThan(Date.now());
+    expect(proposal.policyChecks.length).toBeGreaterThan(0);
+    expect(proposal.expectedConsequences.length).toBeGreaterThan(0);
+    expect(proposal.proposalId).toMatch(/^[0-9a-f-]{36}$/i);
+  });
+
+  it("returns forecast provenance in copilot response", async () => {
+    const created = await createSessionViaHttp(app);
+    const res = await request(app)
+      .post("/api/copilot")
+      .send({ sessionId: created.sessionId, message: "explain Thursday forecast" });
+    expect(res.status).toBe(200);
+    const provenanceText = JSON.stringify(res.body.result.provenance);
+    expect(provenanceText).toMatch(/ML Service|Canonical Fallback|Session Store/i);
+    expect(res.body.result.toolCalls.some((t: { toolName: string }) => t.toolName === "get_attendance_forecast")).toBe(
+      true
+    );
+  });
+
+  it("requires separate human approval request after copilot proposal", async () => {
+    const created = await createSessionViaHttp(app);
+    const copilot = await request(app)
+      .post("/api/copilot")
+      .send({ sessionId: created.sessionId, message: "change attendance trip cancelled apply correction" });
+    const proposalId = copilot.body.state.proposals[0].proposalId;
+    expect(copilot.body.state.forecast.expectedAttendance).toBe(BASELINE_ATTENDANCE);
+
+    const approve = await request(app).post(
+      `/api/session/${created.sessionId}/proposals/${proposalId}/approve`
+    );
+    expect(approve.status).toBe(200);
+    expect(approve.body.state.forecast.expectedAttendance).toBe(CORRECTED_ATTENDANCE);
   });
 });

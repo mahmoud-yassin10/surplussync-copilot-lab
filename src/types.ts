@@ -119,7 +119,7 @@ export interface SchoolForecast {
     intervalType: string;
   };
   recommendedPreparation: number;
-  shortageProbability: number; // e.g. 1.6% (represent as 0.016)
+  shortageProbability: number; // e.g. 4.1% (represent as 0.041)
   surplusProbability50: number; // over 50 meals surplus, e.g. 12% (0.12)
   riskLevel: "LOW" | "MODERATE" | "HIGH";
   dataQuality: "LOW" | "MODERATE" | "HIGH";

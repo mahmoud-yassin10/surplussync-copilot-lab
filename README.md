@@ -38,6 +38,22 @@ npm run dev
 ```
 Open [http://localhost:3000](http://localhost:3000) in your web browser.
 
+### Canonical ML contract (Phase B)
+
+When `ML_SERVICE_URL` points at the SurplusSync ML service with `ALLOW_DEMO_FIXTURE=true`:
+
+| Scenario | expectedAttendance | interval | recommendedPrep | preventableSurplus | shortageProb | risk |
+|----------|-------------------|----------|-----------------|-------------------|--------------|------|
+| Baseline forecast | 528 | 497–557 | 562 | 168 | 0.041 | high |
+| Trip-cancelled what-if | 540 | 512–568 | 575 | 155 | 0.034 | high |
+
+Both responses keep `decisionStatus: PROPOSED`, `approvalRequired: true`, and `safetyFloorApplied: true`.
+The corrected what-if safety buffer is **7 meals** (575 − 568). Live ML and canonical fallback return
+identical contract fields; provenance discloses `ml` vs `local-canonical-fallback`.
+
+Example what-if request: `examples/what_if_request.json` in the ML service repository (mirrored in
+`buildCanonicalTripCancelledChanges()`).
+
 ---
 
 ## Integration Blueprint (Connecting to Main App)

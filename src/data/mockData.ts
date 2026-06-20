@@ -23,7 +23,7 @@ export const INITIAL_FORECAST: SchoolForecast = {
     intervalType: "80% prediction interval",
   },
   recommendedPreparation: 562,
-  shortageProbability: 0.016, // 1.6%
+  shortageProbability: 0.041,
   surplusProbability50: 0.12, // 12%
   riskLevel: "HIGH",
   dataQuality: "HIGH",
