@@ -7,6 +7,7 @@ import { buildMockExplanation, planMockTools } from "./mockToolPlanner";
 import { getSession } from "./sessionStore";
 import {
   EXPLANATION_RESPONSE_SCHEMA,
+  resolveGeminiModel,
   runControlledToolLoop,
   ToolLoopOptions,
 } from "./toolLoop";
@@ -49,6 +50,7 @@ export async function runCopilotTurn(options: CopilotRunnerOptions): Promise<Cop
   const loopResult = await runControlledToolLoop(loopOptions);
 
   let explanation;
+  let warning = loopResult.stoppedReason;
   if (options.mode === "mock" || !options.ai) {
     explanation = buildMockExplanation(
       options.message,
@@ -70,7 +72,7 @@ export async function runCopilotTurn(options: CopilotRunnerOptions): Promise<Cop
     };
     const contents = [...loopResult.contents, summaryPrompt];
     const response = await options.ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: resolveGeminiModel(),
       contents,
       config: {
         responseMimeType: "application/json",
@@ -78,11 +80,30 @@ export async function runCopilotTurn(options: CopilotRunnerOptions): Promise<Cop
         temperature: 0.1,
       },
     });
-    const parsed = CopilotExplanationDraftSchema.safeParse(JSON.parse(response.text || "{}"));
-    if (!parsed.success) {
-      return { ok: false, mode: "GEMINI_TOOL_LOOP", error: "Malformed final model explanation" };
+    let rawExplanation: unknown = {};
+    try {
+      rawExplanation = JSON.parse(response.text || "{}");
+    } catch {
+      rawExplanation = {};
     }
-    explanation = parsed.data;
+    const parsed = CopilotExplanationDraftSchema.safeParse(rawExplanation);
+    if (!parsed.success) {
+      explanation = buildMockExplanation(
+        options.message,
+        loopResult.toolCalls.map((tc) => ({
+          name: tc.toolName,
+          ok: tc.permissionPassed && !(tc.returnedValue as { error?: string })?.error,
+          output: (tc.returnedValue as Record<string, unknown>) ?? {},
+        }))
+      );
+      explanation.limitations = [
+        ...explanation.limitations,
+        "Live Gemini explanation did not match the required schema; deterministic explanation was used for display.",
+      ];
+      warning = [warning, "Malformed final Gemini explanation"].filter(Boolean).join("; ");
+    } else {
+      explanation = parsed.data;
+    }
   }
 
   const assembled = assembleCopilotResponse({
@@ -102,6 +123,6 @@ export async function runCopilotTurn(options: CopilotRunnerOptions): Promise<Cop
     ok: true,
     mode: options.mode === "mock" ? "MOCK_TOOL_LOOP" : "GEMINI_TOOL_LOOP",
     processed: assembled,
-    warning: loopResult.stoppedReason,
+    warning,
   };
 }

@@ -20,6 +20,11 @@ import { TOOL_LOOP_SYSTEM_PROMPT } from "./systemPrompt";
 
 export const MAX_TOOL_LOOP_ITERATIONS = 5;
 export const MAX_IDENTICAL_TOOL_CALLS = 2;
+export const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-lite";
+
+export function resolveGeminiModel(): string {
+  return process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL;
+}
 
 export interface ToolLoopResult {
   toolCalls: ToolExecutionResult["toolCall"][];
@@ -91,7 +96,7 @@ export async function runControlledToolLoop(options: ToolLoopOptions): Promise<T
       iteration = MAX_TOOL_LOOP_ITERATIONS;
     } else if (options.ai) {
       const response = await options.ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: resolveGeminiModel(),
         contents,
         config: {
           tools: [{ functionDeclarations: TOOL_DECLARATIONS }],
